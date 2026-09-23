@@ -122,6 +122,7 @@ function initUI({ viewport, sim }) {
     if (item && ins) {
       for (const el of $$('[data-show-for]', ins)) el.hidden = !el.dataset.showFor.split(' ').includes(item.type);
       for (const el of $$('[data-hide-for]', ins)) el.hidden = el.dataset.hideFor.split(' ').includes(item.type);
+      applyShowWhen(ins, item);
     }
     fillScope($('[data-scope="item"]'));
     updateSourceCallout();
@@ -133,8 +134,19 @@ function initUI({ viewport, sim }) {
   }
 
   function formatOut(el, v) {
+    if (el.dataset.omni && v >= Number(el.dataset.omni)) { el.textContent = 'omni'; return; }
     const dec = Number(el.dataset.dec || 0);
     el.textContent = fmt(v, dec) + (el.dataset.unit || '');
+  }
+
+  // data-show-when="emission=sensor,tone mode=pulsed": every condition must hold.
+  function applyShowWhen(root, item) {
+    for (const el of $$('[data-show-when]', root)) {
+      el.hidden = !el.dataset.showWhen.split(' ').every((cond) => {
+        const [key, values] = cond.split('=');
+        return values.split(',').includes(String(item[key]));
+      });
+    }
   }
 
   function fillScope(scopeEl) {
@@ -230,6 +242,7 @@ function initUI({ viewport, sim }) {
         if (m) it.name = TYPE_LABELS[value] + m[2];
         showInspector();
       }
+      applyShowWhen($(`.inspector[data-kind="${inspectorKind(it)}"]`), it);
       fillScope(scopeEl);
       updateSourceCallout();
       if (['name', 'type', 'material', 'freq'].includes(path)) renderOutliner();
@@ -242,7 +255,7 @@ function initUI({ viewport, sim }) {
       bus.emit('scene', { source: 'env' });
     } else if (scope === 'sim') {
       fillScope(scopeEl);
-      if (path === 'colorBy') viewport.refreshLines();
+      if (path === 'colorBy' || path === 'vizRangeDb') viewport.refreshLines();
       else bus.emit('scene', { source: 'sim' });
     } else if (scope === 'display') {
       viewport.sync();
@@ -281,14 +294,19 @@ function initUI({ viewport, sim }) {
       return;
     }
     const lo = s.freq - s.bw / 2, hi = s.freq + s.bw / 2;
-    const inBand = src.emission === 'hiss' || (src.freq >= lo && src.freq <= hi);
-    b.textContent = inBand ? 'In band: ' : 'Out of band: ';
-    const what = src.emission === 'hiss' ? 'Broadband hiss covers' : `${fmt(src.freq, 1)} kHz is ${inBand ? 'inside' : 'outside'}`;
-    el.append(b, `${what} ${s.name}'s ${fmt(lo, 1)}–${fmt(hi, 1)} kHz band. `);
-    const note = document.createElement('span');
-    note.className = 'muted';
-    note.textContent = 'Interference is simulated in the next phase.';
-    el.append(note);
+    const gDb = 10 * Math.log10(bandGain(s, src.freq, src.emission));
+    const inBand = gDb > -25;
+    b.textContent = gDb > -3 ? 'Can interfere: ' : inBand ? 'Partly filtered: ' : 'Mostly filtered out: ';
+    const what = src.emission === 'hiss'
+      ? `broadband hiss; ${s.name} hears the slice inside its ${fmt(lo, 1)}–${fmt(hi, 1)} kHz band`
+      : `${fmt(src.freq, 1)} kHz vs ${s.name}'s ${fmt(lo, 1)}–${fmt(hi, 1)} kHz band`;
+    el.append(b, `${what} (filter ${fmt(gDb, 1)} dB).`);
+    if (!src.visible) {
+      const note = document.createElement('span');
+      note.className = 'muted';
+      note.textContent = ' Hidden sources are silent.';
+      el.append(note);
+    }
     el.classList.toggle('callout-ok', !inBand);
   }
 
@@ -327,6 +345,15 @@ function initUI({ viewport, sim }) {
     toast(on ? 'Snapping on: 0.1 m, 15°' : 'Snapping off');
   }
   snapBtn.addEventListener('click', toggleSnap);
+  function resetView() {
+    $$('.vp-views [data-view]').forEach((x) => x.classList.toggle('is-active', x.dataset.view === 'persp'));
+    viewport.setView('persp');
+  }
+  function focusSelected() {
+    if (!viewport.frameSelected()) toast('Select something to focus on');
+  }
+  $('#btn-reset-view').addEventListener('click', resetView);
+  $('#btn-focus').addEventListener('click', focusSelected);
   $$('.vp-views [data-view]').forEach((b) => {
     b.addEventListener('click', () => {
       $$('.vp-views [data-view]').forEach((x) => x.classList.toggle('is-active', x === b));
@@ -481,6 +508,8 @@ function initUI({ viewport, sim }) {
     const tools = { q: 'select', w: 'move', e: 'rotate', r: 'scale' };
     if (tools[k]) { setTool(tools[k]); return; }
     if (k === 's') { toggleSnap(); return; }
+    if (k === 'h' || k === 'home') { resetView(); return; }
+    if (k === 'f') { focusSelected(); return; }
     if (k === ' ') { e.preventDefault(); sim.togglePlay(); return; }
     if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSelected(); }
   });

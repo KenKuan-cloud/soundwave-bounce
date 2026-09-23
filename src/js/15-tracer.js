@@ -16,6 +16,9 @@
 //   • The direct echo off a pipe or sphere is computed exactly (curved-mirror
 //     formula at the specular point) instead of by sampling, because a thin
 //     curved target catches too few rays for a stable estimate.
+//   • Other emitters (interference sources and other sensors) are traced the
+//     same way to this sensor, filtered by its frequency band, and placed in
+//     time according to when they fire relative to this sensor's ping.
 // No DOM or Three.js in here.
 // ─────────────────────────────────────────────────────────────
 
@@ -216,41 +219,75 @@ function occluded(prims, o, d, dist) {
   return false;
 }
 
-// ── Main trace ──
-function traceSensor(state, sensor, prims = buildPrimitives(state)) {
-  const started = (typeof performance !== 'undefined' ? performance : Date).now();
-  const { env, sim } = state;
+// ── Beam patterns ──
+// Half-angle ≥ 90° means omnidirectional.
+function makeBeam(halfAngleDeg) {
+  if (halfAngleDeg >= 90) return { omni: true, thMax: Math.PI, power: () => 1 };
+  const ka = pistonKa(halfAngleDeg);
+  return { omni: false, ka, thMax: pistonMaxAngle(ka), power: (th) => pistonPower(ka, th) };
+}
 
-  const fHz = sensor.freq * 1000;
-  const c = speedOfSound(env.temperature);
-  const alphaDb = airAbsorptionDbPerM(fHz, env.temperature, env.humidity, env.pressure);
+// Sensor receive filter (power gain) for a signal at `freqKHz`.
+// A 4th-order band-pass: −3 dB at the band edges, steep outside.
+function bandGain(sensor, freqKHz, emission) {
+  if (emission === 'hiss') {
+    // Broadband hiss spread evenly over 20–100 kHz; the sensor hears its
+    // noise bandwidth (≈ 1.11 × bandwidth for this filter shape).
+    return Math.min(1, 1.11 * sensor.bw / 80);
+  }
+  const x = (freqKHz - sensor.freq) / Math.max(0.05, sensor.bw / 2);
+  return 1 / (1 + x * x * x * x);
+}
+
+// Peak-normalised Gaussian pulse kernel for a burst of `cycles` at `fHz`.
+function pulseKernel(cycles, fHz, dtMs) {
+  const pulseMs = cycles / fHz * 1000;
+  const sigmaBins = Math.max(0.02, pulseMs / 2.5) / dtMs;
+  const half = Math.ceil(4 * sigmaBins);
+  const k = new Float64Array(2 * half + 1);
+  for (let i = -half; i <= half; i++) k[i + half] = Math.exp(-(i * i) / (2 * sigmaBins * sigmaBins));
+  return { k, half };
+}
+
+function convolve(power, { k, half }) {
+  const n = power.length;
+  const out = new Float64Array(n);
+  for (let b = 0; b < n; b++) {
+    const p = power[b];
+    if (!p) continue;
+    const lo = Math.max(0, b - half), hi = Math.min(n - 1, b + half);
+    for (let j = lo; j <= hi; j++) out[j] += p * k[j - b + half];
+  }
+  return out;
+}
+
+// ── Emitter → receiver trace ──
+// Arrival powers are relative to the emitter's on-axis intensity at 1 m.
+// `monostatic`: emitter and receiver are the same transducer (own echoes).
+function traceEmitter(cfg) {
+  const { prims, sim, c, alphaDb, tMax, dtMs, txPos, txFwd, txBeam, rxPos, rxFwd, rxBeam, monostatic } = cfg;
   const alphaNp = alphaDb * Math.LN10 / 10; // power: 10^(−αL/10) = e^(−αNp·L)
-  const tWindow = 2 * sensor.maxRange / c * 1000; // ms, round trip at max range
-  const tMax = Math.max(5, Math.ceil((tWindow + 2) / 5) * 5);
   const Lmax = c * tMax / 1000;
-
-  const dtMs = 0.005;
   const nBins = Math.ceil(tMax / dtMs) + 1;
   const power = new Float64Array(nBins);
   const binTopI = new Float64Array(nBins);
   const binTopLabel = new Array(nBins);
 
-  const ka = pistonKa(sensor.halfAngle);
-  const thMax = pistonMaxAngle(ka);
-  const fwd = aimVector(sensor.yaw, sensor.pitch);
+  const fwd = txFwd;
   const [bu, bv] = orthoBasis(fwd);
-  const rx = [sensor.pos.x, sensor.pos.y, sensor.pos.z];
+  const tx = txPos;
+  const rx = rxPos;
 
-  const N = Math.max(1, Math.round(sim.rays));
-  const cosMax = Math.cos(thMax);
+  const N = Math.max(1, Math.round(cfg.rays));
+  const cosMax = Math.cos(txBeam.thMax);
   const dOmega = 2 * Math.PI * (1 - cosMax) / N;
   // Gaussian beam width per metre. The footprint-equivalent width is
   // sqrt(dΩ/2π); widening it smooths the estimate (the energy stays the same).
   const BEAM_SMOOTHING = 2;
   const beamSigma0 = BEAM_SMOOTHING * Math.sqrt(dOmega / (2 * Math.PI));
   const cutoff = Math.pow(10, sim.cutoffDb / 10);
-  const vizStride = Math.max(1, Math.ceil(N / Math.max(1, sim.particles)));
-  const rng = mulberry32(1234567);
+  const vizStride = Math.max(1, Math.ceil(N / Math.max(1, cfg.vizCount)));
+  const rng = mulberry32(cfg.seed || 1234567);
   const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 
   const viz = [];
@@ -258,12 +295,12 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
   const top = [];
   const TOP_N = 120;
 
-  // Receive gain for sound arriving from direction `from` (unit vector from the
-  // receiver towards where the sound comes from).
+  // Receive gain for sound arriving from direction (fx, fy, fz): unit vector
+  // from the receiver towards where the sound comes from.
   const rxGain = (fx, fy, fz) => {
-    const cosT = fx * fwd[0] + fy * fwd[1] + fz * fwd[2];
+    const cosT = fx * rxFwd[0] + fy * rxFwd[1] + fz * rxFwd[2];
     if (cosT <= 0) return 0;
-    return pistonPower(ka, Math.acos(Math.min(1, cosT)));
+    return rxBeam.power(Math.acos(Math.min(1, cosT)));
   };
 
   function addArrival(L, I, sig, label, bounces, diffuse, pts) {
@@ -298,7 +335,7 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
     const cp = Math.cos(phi) * sinT, sp = Math.sin(phi) * sinT;
     for (let k = 0; k < 3; k++) d[k] = fwd[k] * cosT + bu[k] * cp + bv[k] * sp;
 
-    const dirPow = pistonPower(ka, Math.acos(cosT));
+    const dirPow = txBeam.power(Math.acos(cosT));
     if (dirPow < cutoff) continue;
 
     let E = dirPow * dOmega; // ray power, re. on-axis intensity at 1 m
@@ -319,8 +356,8 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
     }
     let sig = '';
     let label = '';
-    let curvedFirst = false; // first bounce off a pipe/sphere side: handled analytically
-    o[0] = rx[0]; o[1] = rx[1]; o[2] = rx[2];
+    let curvedFirst = false; // monostatic first bounce off a pipe/sphere: handled analytically
+    o[0] = tx[0]; o[1] = tx[1]; o[2] = tx[2];
 
     const keepViz = i % vizStride === 0;
     const pts = [o[0], o[1], o[2]];
@@ -334,7 +371,8 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
       const nHit = hit ? [hit.n[0], hit.n[1], hit.n[2]] : null;
       const curvature = hit ? hit.curvature : 0;
 
-      // Specular return passing the receiver on this segment?
+      // Specular sound passing the receiver on this segment?
+      // (The direct, unreflected path is computed exactly below.)
       if (bounces > 0 && !diffuse && !(bounces === 1 && curvedFirst)) {
         const wx = rx[0] - o[0], wy = rx[1] - o[1], wz = rx[2] - o[2];
         const tc = wx * d[0] + wy * d[1] + wz * d[2];
@@ -373,7 +411,7 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
       pts.push(q[0], q[1], q[2]);
       cum.push(L);
       bounces++;
-      if (bounces === 1) curvedFirst = curvature > 0;
+      if (bounces === 1) curvedFirst = monostatic && curvature > 0;
 
       // Normal facing back towards where the ray came from.
       const flip = dot3(nHit, d) > 0 ? -1 : 1;
@@ -448,115 +486,266 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
     if (keepViz) viz.push({ pts, cum, segRel, len: cum[cum.length - 1] });
   }
 
-  // ── Direct echoes off curved surfaces (exact) ──
-  // A spherical wave (radius R) reflects off a convex surface with principal
-  // radii of curvature Rc; the reflected wavefront radius is 1/(1/R + 2/Rc),
-  // and intensity back at the sensor falls by ρ/(ρ + R) in each direction.
-  for (const pr of prims) {
-    if (pr.kind !== 'sph' && pr.kind !== 'cyl') continue;
-    let p, R, rho1, rho2;
-    if (pr.kind === 'sph') {
-      const v = [rx[0] - pr.c[0], rx[1] - pr.c[1], rx[2] - pr.c[2]];
-      const dist = Math.hypot(v[0], v[1], v[2]);
-      if (dist <= pr.r) continue;
-      p = [pr.c[0] + v[0] / dist * pr.r, pr.c[1] + v[1] / dist * pr.r, pr.c[2] + v[2] / dist * pr.r];
-      R = dist - pr.r;
-      rho1 = rho2 = 1 / (1 / R + 2 / pr.r);
-    } else {
-      const w = [rx[0] - pr.c[0], rx[1] - pr.c[1], rx[2] - pr.c[2]];
-      const lx = dot3(w, pr.R[0]), ly = dot3(w, pr.R[1]), lz = dot3(w, pr.R[2]);
-      const radial = Math.hypot(lx, lz);
-      if (Math.abs(ly) > pr.hl || radial <= pr.r) continue; // no perpendicular point on the side
-      const px = lx / radial * pr.r, pz = lz / radial * pr.r;
-      p = [0, 1, 2].map((i) => pr.c[i] + pr.R[0][i] * px + pr.R[1][i] * ly + pr.R[2][i] * pz);
-      R = radial - pr.r;
-      rho1 = 1 / (1 / R + 2 / pr.r); // across the axis
-      rho2 = R;                       // along the axis (flat)
-    }
-    const u = [(p[0] - rx[0]) / R, (p[1] - rx[1]) / R, (p[2] - rx[2]) / R];
-    const cosT = dot3(u, fwd);
-    if (cosT <= 0) continue;
-    const D = pistonPower(ka, Math.acos(Math.min(1, cosT)));
-    if (D <= 0 || occluded(prims, rx, u, R)) continue;
-    const I = D * D / (R * R) * (rho1 / (rho1 + R)) * (rho2 / (rho2 + R)) *
-      (1 - pr.absorption) * (1 - pr.scattering) * Math.exp(-alphaNp * 2 * R);
-    addArrival(2 * R, I, `>${pr.id}`, pr.name, 1, false, [rx[0], rx[1], rx[2], p[0], p[1], p[2]]);
-  }
-
-  // ── Received envelope ──
-  // Each arrival is a pulse of `cycles` periods; the transducer smooths it.
-  const pulseMs = sensor.cycles / fHz * 1000;
-  const sigmaBins = Math.max(0.02, pulseMs / 2.5) / dtMs;
-  const half = Math.ceil(4 * sigmaBins);
-  const kernel = new Float64Array(2 * half + 1);
-  for (let k = -half; k <= half; k++) kernel[k + half] = Math.exp(-(k * k) / (2 * sigmaBins * sigmaBins));
-
-  const echoRel = new Float64Array(nBins);
-  for (let b = 0; b < nBins; b++) {
-    const p = power[b];
-    if (!p) continue;
-    const lo = Math.max(0, b - half), hi = Math.min(nBins - 1, b + half);
-    for (let j = lo; j <= hi; j++) echoRel[j] += p * kernel[j - b + half];
-  }
-
-  const tx = sensor.txLevel;
-  const noiseRel = Math.pow(10, (AMBIENT_NOISE_DB - tx) / 10);
-  const noiseRng = mulberry32(99);
-  const echoDb = new Float32Array(nBins);   // echoes only (for the chart trace)
-  const totalDb = new Float32Array(nBins);  // what the receiver sees
-  for (let b = 0; b < nBins; b++) {
-    const t = b * dtMs;
-    // Transmit burst + ring-down: fades 100 dB over the blanking time.
-    const ringDb = -100 * t / Math.max(0.1, sensor.blanking);
-    const ring = Math.pow(10, ringDb / 10);
-    const noise = noiseRel * (0.6 + 0.8 * noiseRng());
-    echoDb[b] = tx + 10 * Math.log10(echoRel[b] + ring + noise);
-    totalDb[b] = echoDb[b];
-  }
-
-  // ── Detection: first threshold crossing after blanking, within max range ──
-  let detection = null;
-  const bStart = Math.ceil(sensor.blanking / dtMs);
-  const bEnd = Math.min(nBins - 1, Math.floor(tWindow / dtMs));
-  for (let b = bStart; b <= bEnd; b++) {
-    if (totalDb[b] >= sensor.threshold) {
-      const tMs = b * dtMs;
-      // Attribute it to the strongest contribution around the crossing.
-      let bestI = 0, bestLabel = null;
-      for (let j = Math.max(0, b - half); j <= Math.min(nBins - 1, b + 2 * half); j++) {
-        if (binTopI[j] > bestI) { bestI = binTopI[j]; bestLabel = binTopLabel[j]; }
+  if (monostatic) {
+    // ── Direct echoes off curved surfaces (exact) ──
+    // A spherical wave (radius R) reflects off a convex surface with principal
+    // radii of curvature Rc; the reflected wavefront radius is 1/(1/R + 2/Rc),
+    // and intensity back at the sensor falls by ρ/(ρ + R) in each direction.
+    for (const pr of prims) {
+      if (pr.kind !== 'sph' && pr.kind !== 'cyl') continue;
+      let p, R, rho1, rho2;
+      if (pr.kind === 'sph') {
+        const v = [rx[0] - pr.c[0], rx[1] - pr.c[1], rx[2] - pr.c[2]];
+        const dist = Math.hypot(v[0], v[1], v[2]);
+        if (dist <= pr.r) continue;
+        p = [pr.c[0] + v[0] / dist * pr.r, pr.c[1] + v[1] / dist * pr.r, pr.c[2] + v[2] / dist * pr.r];
+        R = dist - pr.r;
+        rho1 = rho2 = 1 / (1 / R + 2 / pr.r);
+      } else {
+        const w = [rx[0] - pr.c[0], rx[1] - pr.c[1], rx[2] - pr.c[2]];
+        const lx = dot3(w, pr.R[0]), ly = dot3(w, pr.R[1]), lz = dot3(w, pr.R[2]);
+        const radial = Math.hypot(lx, lz);
+        if (Math.abs(ly) > pr.hl || radial <= pr.r) continue; // no perpendicular point on the side
+        const px = lx / radial * pr.r, pz = lz / radial * pr.r;
+        p = [0, 1, 2].map((i) => pr.c[i] + pr.R[0][i] * px + pr.R[1][i] * ly + pr.R[2][i] * pz);
+        R = radial - pr.r;
+        rho1 = 1 / (1 / R + 2 / pr.r); // across the axis
+        rho2 = R;                       // along the axis (flat)
       }
-      detection = { tMs, distance: C_ASSUMED * tMs / 1000 / 2, label: bestLabel };
-      break;
+      const u = [(p[0] - rx[0]) / R, (p[1] - rx[1]) / R, (p[2] - rx[2]) / R];
+      const cosT = dot3(u, fwd);
+      if (cosT <= 0) continue;
+      const D = txBeam.power(Math.acos(Math.min(1, cosT)));
+      if (D <= 0 || occluded(prims, rx, u, R)) continue;
+      const I = D * D / (R * R) * (rho1 / (rho1 + R)) * (rho2 / (rho2 + R)) *
+        (1 - pr.absorption) * (1 - pr.scattering) * Math.exp(-alphaNp * 2 * R);
+      addArrival(2 * R, I, `>${pr.id}`, pr.name, 1, false, [rx[0], rx[1], rx[2], p[0], p[1], p[2]]);
+    }
+  } else {
+    // ── Direct path, emitter → receiver (exact) ──
+    const v = [rx[0] - tx[0], rx[1] - tx[1], rx[2] - tx[2]];
+    const R = Math.hypot(v[0], v[1], v[2]);
+    if (R > 1e-6) {
+      const u = [v[0] / R, v[1] / R, v[2] / R];
+      const cosT = dot3(u, fwd);
+      const Dt = txBeam.omni ? 1 : cosT > 0 ? txBeam.power(Math.acos(Math.min(1, cosT))) : 0;
+      const Dr = rxGain(-u[0], -u[1], -u[2]);
+      if (Dt > 0 && Dr > 0 && !occluded(prims, tx, u, R)) {
+        const I = Dt * Dr / Math.max(R * R, 0.01) * Math.exp(-alphaNp * R);
+        addArrival(R, I, 'direct', 'Direct', 0, false, [tx[0], tx[1], tx[2]]);
+      }
     }
   }
+
+  return { power, binTopI, binTopLabel, groups, top, viz, rays: N, nBins };
+}
+
+// ── Sensor trace: own echoes + everything that can interfere ──
+function traceSensor(state, sensor, prims = buildPrimitives(state)) {
+  const started = (typeof performance !== 'undefined' ? performance : Date).now();
+  const { env, sim } = state;
+
+  const fHz = sensor.freq * 1000;
+  const c = speedOfSound(env.temperature);
+  const alphaDb = airAbsorptionDbPerM(fHz, env.temperature, env.humidity, env.pressure);
+  const tWindow = 2 * sensor.maxRange / c * 1000; // ms, round trip at max range
+  const tMax = Math.max(5, Math.ceil((tWindow + 2) / 5) * 5);
+  const dtMs = 0.005;
+  const sensorBeam = makeBeam(sensor.halfAngle);
+  const fwd = aimVector(sensor.yaw, sensor.pitch);
+  const rx = [sensor.pos.x, sensor.pos.y, sensor.pos.z];
+
+  const own = traceEmitter({
+    prims, sim, c, alphaDb, tMax, dtMs,
+    txPos: rx, txFwd: fwd, txBeam: sensorBeam,
+    rxPos: rx, rxFwd: fwd, rxBeam: sensorBeam,
+    monostatic: true, rays: sim.rays, vizCount: sim.particles,
+  });
+  const tx = sensor.txLevel;
+
+  // Other emitters: interference sources, plus every other visible sensor
+  // (their pings are crosstalk for this one).
+  const interferers = [];
+  const emitters = state.items.filter((it) => it.visible && (it.type === 'source' || (it.type === 'sensor' && it.id !== sensor.id)));
+  emitters.forEach((it, idx) => {
+    const isSensor = it.type === 'sensor';
+    const emission = isSensor ? 'sensor' : it.emission;
+    const freq = emission === 'hiss' ? sensor.freq : it.freq;
+    const continuous = !isSensor && (emission !== 'sensor' || it.mode === 'continuous');
+    const gain = bandGain(sensor, it.freq, emission);
+    const info = {
+      id: it.id,
+      name: it.name,
+      isSensor,
+      emission,
+      freq: it.freq,
+      levelDb: isSensor ? it.txLevel : it.level,
+      bandGainDb: 10 * Math.log10(gain),
+      continuous,
+      period: isSensor ? it.interval : it.period,
+      offset: isSensor ? (it.pingOffset || 0) : it.offset,
+      cycles: isSensor ? it.cycles : 8,
+      inBand: gain >= 1e-3, // within 30 dB of the passband
+    };
+    if (info.inBand) {
+      const fSrc = freq * 1000;
+      const tr = traceEmitter({
+        prims, sim, c,
+        alphaDb: airAbsorptionDbPerM(fSrc, env.temperature, env.humidity, env.pressure),
+        tMax: 2 * tMax, dtMs,
+        txPos: [it.pos.x, it.pos.y, it.pos.z],
+        txFwd: aimVector(it.yaw, it.pitch),
+        txBeam: makeBeam(isSensor ? it.halfAngle : it.directivity),
+        rxPos: rx, rxFwd: fwd, rxBeam: sensorBeam,
+        monostatic: false,
+        rays: Math.min(sim.rays, 10000),
+        vizCount: Math.min(sim.particles, continuous ? 600 : 2000),
+        seed: 7919 * (idx + 2),
+      });
+      info.trace = tr;
+      info.conv = continuous ? null : convolve(tr.power, pulseKernel(info.cycles, fSrc, dtMs));
+      info.steady = tr.power.reduce((a, b) => a + b, 0);
+    }
+    interferers.push(info);
+  });
 
   // ── Ground truth: first surface straight along the sensor axis ──
   const axisHit = nearestHit(prims, rx, fwd, 1000);
   const trueDistance = axisHit ? axisHit.t : null;
   const trueTarget = axisHit ? axisHit.prim.name : null;
 
-  const groupList = [...groups.values()]
+  const nBins = own.nBins;
+  const echoConv = convolve(own.power, pulseKernel(sensor.cycles, fHz, dtMs));
+
+  const groupList = [...own.groups.values()]
     .map((g) => ({ ...g, levelDb: tx + 10 * Math.log10(g.power) }))
     .filter((g) => g.levelDb > AMBIENT_NOISE_DB - 10)
     .sort((a, b) => b.power - a.power);
 
-  const ended = (typeof performance !== 'undefined' ? performance : Date).now();
-  return {
+  const result = {
     sensorId: sensor.id,
     c, alphaDb, lambda: c / fHz, fHz,
     tMax, tWindow, dtMs, nBins,
-    echoDb, totalDb,
-    noiseDb: tx + 10 * Math.log10(noiseRel),
+    noiseDb: AMBIENT_NOISE_DB,
     threshold: sensor.threshold,
     txLevel: tx,
     blanking: sensor.blanking,
-    detection,
+    interval: sensor.interval,
+    pingOffset: sensor.pingOffset || 0,
+    kernelHalf: pulseKernel(sensor.cycles, fHz, dtMs).half,
+    echoConv,
+    binTopI: own.binTopI,
+    binTopLabel: own.binTopLabel,
+    interferers,
     trueDistance, trueTarget,
     groups: groupList,
-    top,
-    viz,
-    rays: N,
-    traceMs: ended - started,
+    top: own.top,
+    viz: own.viz,
+    rays: own.rays,
   };
+  composePing(result, 0);
+  result.traceMs = (typeof performance !== 'undefined' ? performance : Date).now() - started;
+  return result;
+}
+
+// Emission times (ms, relative to this sensor's ping number `pingIndex` at
+// t = 0) of a pulsed interferer that can still be heard within the window.
+function emissionTimes(result, it, pingIndex) {
+  const shift = pingIndex * result.interval - result.pingOffset;
+  const period = Math.max(0.5, it.period);
+  const out = [];
+  const kMin = Math.ceil((shift - 2 * result.tMax - it.offset) / period);
+  const kMax = Math.floor((shift + result.tMax - it.offset) / period);
+  for (let k = kMin; k <= kMax && out.length < 200; k++) out.push(it.offset + k * period - shift);
+  return out;
+}
+
+// Combine own echoes and interference for one ping, then detect.
+// Pulsed interference lands at different times on each ping when the
+// emitters' intervals differ, which is what makes crosstalk "jump around".
+function composePing(result, pingIndex) {
+  const { nBins, dtMs, txLevel: tx } = result;
+  const txAbs = Math.pow(10, tx / 10);
+  const noiseAbs = Math.pow(10, AMBIENT_NOISE_DB / 10);
+  const interfAbs = new Float64Array(nBins);
+  const perSource = [];
+
+  for (const it of result.interferers) {
+    it.emissions = [];
+    if (!it.trace) continue;
+    const g = Math.pow(10, (it.levelDb + it.bandGainDb) / 10);
+    const contrib = new Float64Array(nBins);
+    if (it.continuous) {
+      contrib.fill(g * it.steady);
+    } else {
+      it.emissions = emissionTimes(result, it, pingIndex);
+      const conv = it.conv;
+      for (const e of it.emissions) {
+        const shiftBins = Math.round(e / dtMs);
+        const b0 = Math.max(0, shiftBins);
+        for (let b = b0; b < nBins; b++) {
+          const j = b - shiftBins;
+          if (j >= conv.length) break;
+          contrib[b] += g * conv[j];
+        }
+      }
+    }
+    for (let b = 0; b < nBins; b++) interfAbs[b] += contrib[b];
+    perSource.push({ it, contrib });
+  }
+
+  const echoDb = new Float32Array(nBins);
+  const interfDb = new Float32Array(nBins);
+  const totalDb = new Float32Array(nBins);
+  const echoAbs = new Float64Array(nBins);
+  const noiseRng = mulberry32(99 + pingIndex);
+  for (let b = 0; b < nBins; b++) {
+    const t = b * dtMs;
+    // Transmit burst + ring-down: fades 100 dB over the blanking time.
+    const ring = Math.pow(10, -10 * t / Math.max(0.1, result.blanking));
+    const noise = noiseAbs * (0.6 + 0.8 * noiseRng());
+    echoAbs[b] = txAbs * (result.echoConv[b] + ring) + noise;
+    echoDb[b] = 10 * Math.log10(echoAbs[b]);
+    interfDb[b] = interfAbs[b] > 0 ? 10 * Math.log10(interfAbs[b]) : -Infinity;
+    totalDb[b] = 10 * Math.log10(echoAbs[b] + interfAbs[b]);
+  }
+
+  // ── Detection: first threshold crossing after blanking, within max range ──
+  let detection = null;
+  const half = result.kernelHalf;
+  const bStart = Math.ceil(result.blanking / dtMs);
+  const bEnd = Math.min(nBins - 1, Math.floor(result.tWindow / dtMs));
+  for (let b = bStart; b <= bEnd; b++) {
+    if (totalDb[b] < result.threshold) continue;
+    const tMs = b * dtMs;
+    const lo = Math.max(0, b - half), hi = Math.min(nBins - 1, b + 2 * half);
+    // Own echo or interference? Compare their peaks around the crossing.
+    let echoPeak = 0, bestI = 0, label = null;
+    for (let j = lo; j <= hi; j++) {
+      echoPeak = Math.max(echoPeak, txAbs * result.echoConv[j]);
+      if (result.binTopI[j] > bestI) { bestI = result.binTopI[j]; label = result.binTopLabel[j]; }
+    }
+    let src = null, srcPeak = 0;
+    for (const { it, contrib } of perSource) {
+      let m = 0;
+      for (let j = lo; j <= hi; j++) m = Math.max(m, contrib[j]);
+      if (m > srcPeak) { srcPeak = m; src = it; }
+    }
+    const interference = !!src && srcPeak > echoPeak;
+    detection = {
+      tMs,
+      distance: C_ASSUMED * tMs / 1000 / 2,
+      label: interference ? src.name : label,
+      interference,
+      sourceId: interference ? src.id : null,
+    };
+    break;
+  }
+
+  result.pingIndex = pingIndex;
+  result.echoDb = echoDb;
+  result.interfDb = interfDb;
+  result.totalDb = totalDb;
+  result.detection = detection;
+  return result;
 }

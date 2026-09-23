@@ -32,6 +32,7 @@ function chartColors() {
     accent: cssVar('--accent'),
     bad: cssVar('--bad'),
     good: cssVar('--good'),
+    source: cssVar('--source'),
     panel2: cssVar('--panel-2'),
     mono: cssVar('--mono'),
     font: cssVar('--font'),
@@ -102,8 +103,8 @@ function createEchoChart(canvas, { onScrub } = {}) {
       return;
     }
 
-    // Received level: peak per pixel column so short echoes aren't lost.
-    const { totalDb, nBins } = result;
+    // Own echoes (+ noise): peak per pixel column so short echoes aren't lost.
+    const { echoDb: totalDb, nBins } = result;
     const cols = Math.max(1, Math.floor(pw));
     ctx.beginPath();
     ctx.moveTo(x(0), y(CHART_DB_MIN));
@@ -124,6 +125,31 @@ function createEchoChart(canvas, { onScrub } = {}) {
     ctx.lineWidth = 1.4;
     ctx.stroke();
     ctx.lineWidth = 1;
+
+    // Interference from other emitters, where it rises above the noise.
+    const { interfDb } = result;
+    if (result.interferers.some((it) => it.trace)) {
+      const floor = AMBIENT_NOISE_DB + 3;
+      ctx.beginPath();
+      let pen = false;
+      for (let c = 0; c <= cols; c++) {
+        const b0 = Math.floor((c / cols) * (nBins - 1));
+        const b1 = Math.max(b0, Math.floor(((c + 1) / cols) * (nBins - 1)));
+        let m = -Infinity;
+        for (let b = b0; b <= b1; b++) if (interfDb[b] > m) m = interfDb[b];
+        if (m > floor) {
+          if (!pen) { ctx.moveTo(pad.l + c, y(floor)); pen = true; }
+          ctx.lineTo(pad.l + c, y(m));
+        } else if (pen) {
+          ctx.lineTo(pad.l + c, y(floor));
+          pen = false;
+        }
+      }
+      ctx.strokeStyle = col.source;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
 
     // Threshold
     ctx.setLineDash([5, 4]);
@@ -160,7 +186,7 @@ function createEchoChart(canvas, { onScrub } = {}) {
       ctx.closePath();
       ctx.fill();
       ctx.font = '600 11px ' + col.font;
-      const text = `Detected ${fmt(det.distance, 2)} m`;
+      const text = `${det.interference ? 'False echo' : 'Detected'} ${fmt(det.distance, 2)} m`;
       const tw = ctx.measureText(text).width;
       ctx.fillText(text, dx + 8 + tw > pad.l + pw ? dx - 8 - tw : dx + 8, dy - 4);
     }

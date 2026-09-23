@@ -54,6 +54,19 @@ function createViewport(container) {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
+  // Gentler zoom with limits, so a fast scroll can't fly through the scene
+  // or shrink it to a dot.
+  controls.zoomSpeed = 0.45;
+  controls.minDistance = 0.4;
+  controls.maxDistance = 25;
+  controls.maxPolarAngle = Math.PI * 0.49;
+  controls.addEventListener('change', () => {
+    // Keep the orbit centre inside the room so panning can't lose the scene.
+    const { room } = store.state.env;
+    const t = controls.target;
+    const lim = (v, a) => clamp(v, -a, a);
+    t.set(lim(t.x, room.w / 2 + 2), clamp(t.y, 0, Math.max(room.h, 3) + 1), lim(t.z, room.d / 2 + 2));
+  });
 
   scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x1a1f28, 0.9));
   const sun = new THREE.DirectionalLight(0xffffff, 1.1);
@@ -368,13 +381,32 @@ function createViewport(container) {
       }
     }
     if (!p) { p = new THREE.Vector3(-size * 0.52, size * 0.42, size * 0.64); t.set(0, 0.7, 0.2); }
+    controls.maxDistance = Math.max(15, size * 2.5);
     camera.position.copy(p);
     controls.target.copy(t);
     controls.update();
   }
 
+  // Centre the view on the selected item, keeping the viewing direction.
+  function frameSelected() {
+    const v = views.get(store.selectedId);
+    if (!v) return false;
+    const box = new THREE.Box3().setFromObject(v.selectTarget);
+    if (box.isEmpty()) return false;
+    const center = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(0.3, box.getSize(new THREE.Vector3()).length() / 2);
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    const dist = radius / Math.sin((camera.fov * DEG) / 2) * 1.4;
+    controls.target.copy(center);
+    camera.position.copy(center).addScaledVector(dir, clamp(dist, controls.minDistance, controls.maxDistance));
+    controls.update();
+    return true;
+  }
+
   // ── Sound visualisation ──
   const vis = { result: null, alphaDb: 0, c: 343 };
+  // Continuous sources are drawn as a train of wavefronts this far apart.
+  const CONTINUOUS_SPACING_MS = 4;
   const particleGeo = new THREE.BufferGeometry();
   const particles = new THREE.Points(particleGeo, new THREE.PointsMaterial({ size: 0.035, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false }));
   const rayLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.25, depthWrite: false }));
@@ -382,12 +414,16 @@ function createViewport(container) {
   for (const o of [particles, rayLines, rxLines]) { o.frustumCulled = false; noRaycast(o); scene.add(o); }
 
   const tmpColor = new THREE.Color();
-  function colorFor(db, bounce) {
+  function colorFor(db, bounce, fromSource = false) {
     const mode = store.state.sim.colorBy;
     if (mode === 'bounce') return tmpColor.copy(BOUNCE_COLORS[Math.min(bounce, BOUNCE_COLORS.length - 1)]);
-    if (mode === 'source') return tmpColor.setHex(COLORS.sensor);
+    if (mode === 'source') return tmpColor.setHex(fromSource ? COLORS.source : COLORS.sensor);
     return intensityColor(-db / LEGEND_RANGE_DB, tmpColor);
   }
+
+  // Rays launched more than `vizRangeDb` below the beam axis are not drawn,
+  // so by default the wavefront shows the main beam, not the faint side lobes.
+  const inVizRange = (v) => 10 * Math.log10(v.segRel[0]) >= -store.state.sim.vizRangeDb;
 
   function setLineGeometry(lines, pos, col) {
     lines.geometry.dispose();
@@ -404,6 +440,7 @@ function createViewport(container) {
       const step = Math.max(1, Math.ceil(r.viz.length / 400));
       for (let i = 0; i < r.viz.length; i += step) {
         const v = r.viz[i];
+        if (!inVizRange(v)) continue;
         for (let k = 0; k < v.segRel.length; k++) {
           const a = k * 3;
           pos.push(v.pts[a], v.pts[a + 1], v.pts[a + 2], v.pts[a + 3], v.pts[a + 4], v.pts[a + 5]);
@@ -434,6 +471,18 @@ function createViewport(container) {
           col.push(c.r, c.g, c.b, c.r, c.g, c.b);
         }
       }
+      // Strongest interference paths, always in the source colour.
+      const orange = new THREE.Color(COLORS.source);
+      for (const it of r.interferers) {
+        if (!it.trace) continue;
+        for (const a of it.trace.top.slice(0, 8)) {
+          const p = a.pts;
+          for (let k = 0; k + 5 < p.length; k += 3) {
+            pos.push(p[k], p[k + 1], p[k + 2], p[k + 3], p[k + 4], p[k + 5]);
+            col.push(orange.r, orange.g, orange.b, orange.r, orange.g, orange.b);
+          }
+        }
+      }
     }
     setLineGeometry(rxLines, pos, col);
   }
@@ -443,7 +492,13 @@ function createViewport(container) {
     if (result) {
       vis.alphaDb = result.alphaDb;
       vis.c = result.c;
-      const n = Math.max(1, result.viz.length);
+      let n = result.viz.length;
+      for (const it of result.interferers) {
+        if (!it.trace) continue;
+        const copies = it.continuous ? Math.ceil(2 * result.tMax / CONTINUOUS_SPACING_MS) + 1 : 3;
+        n += it.trace.viz.length * copies;
+      }
+      n = Math.max(1, n);
       const attr = particleGeo.getAttribute('position');
       if (!attr || attr.count < n) {
         particleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
@@ -459,28 +514,50 @@ function createViewport(container) {
 
   function updateParticles() {
     const r = vis.result;
-    particles.visible = !!r && store.state.display.particles && timeMs > 0;
+    particles.visible = !!r && store.state.display.particles;
     if (!particles.visible) return;
-    const s = vis.c * timeMs / 1000;
     const P = particleGeo.getAttribute('position').array;
     const C = particleGeo.getAttribute('color').array;
+    const cap = P.length / 3;
     const intensityMode = store.state.sim.colorBy === 'intensity';
     let n = 0;
-    for (const v of r.viz) {
-      if (s > v.len) continue;
-      let k = 0;
-      while (k < v.segRel.length - 1 && v.cum[k + 1] < s) k++;
-      const db = particleDb(v.segRel[k], s, vis.alphaDb);
-      if (intensityMode && db < -LEGEND_RANGE_DB - 10) continue;
-      const segLen = v.cum[k + 1] - v.cum[k];
-      const f = segLen > 0 ? (s - v.cum[k]) / segLen : 0;
-      const a = k * 3;
-      P[n * 3] = v.pts[a] + (v.pts[a + 3] - v.pts[a]) * f;
-      P[n * 3 + 1] = v.pts[a + 1] + (v.pts[a + 4] - v.pts[a + 1]) * f;
-      P[n * 3 + 2] = v.pts[a + 2] + (v.pts[a + 5] - v.pts[a + 2]) * f;
-      const c = colorFor(db, k);
-      C[n * 3] = c.r; C[n * 3 + 1] = c.g; C[n * 3 + 2] = c.b;
-      n++;
+
+    // Wavefront of one set of rays, `s` metres from where it started.
+    // `offsetDb` puts other emitters on the same colour scale as this sensor.
+    const drawFront = (rays, s, offsetDb, fromSource) => {
+      if (s <= 0) return;
+      for (const v of rays) {
+        if (n >= cap) return;
+        if (s > v.len || !inVizRange(v)) continue;
+        let k = 0;
+        while (k < v.segRel.length - 1 && v.cum[k + 1] < s) k++;
+        const db = particleDb(v.segRel[k], s, vis.alphaDb) + offsetDb;
+        if (intensityMode && db < -LEGEND_RANGE_DB - 10) continue;
+        const segLen = v.cum[k + 1] - v.cum[k];
+        const f = segLen > 0 ? (s - v.cum[k]) / segLen : 0;
+        const a = k * 3;
+        P[n * 3] = v.pts[a] + (v.pts[a + 3] - v.pts[a]) * f;
+        P[n * 3 + 1] = v.pts[a + 1] + (v.pts[a + 4] - v.pts[a + 1]) * f;
+        P[n * 3 + 2] = v.pts[a + 2] + (v.pts[a + 5] - v.pts[a + 2]) * f;
+        const c = colorFor(db, k, fromSource);
+        C[n * 3] = c.r; C[n * 3 + 1] = c.g; C[n * 3 + 2] = c.b;
+        n++;
+      }
+    };
+
+    const mps = vis.c / 1000; // metres per ms
+    if (timeMs > 0) drawFront(r.viz, mps * timeMs, 0, false);
+    for (const it of r.interferers) {
+      if (!it.trace) continue;
+      const offsetDb = it.levelDb - r.txLevel;
+      if (it.continuous) {
+        // A steady emitter: evenly spaced wavefronts.
+        const phase = timeMs % CONTINUOUS_SPACING_MS;
+        for (let e = phase; e <= 2 * r.tMax; e += CONTINUOUS_SPACING_MS) drawFront(it.trace.viz, mps * e, offsetDb, true);
+      } else {
+        // Pulses already fired, still in flight.
+        for (const e of it.emissions) if (e <= timeMs) drawFront(it.trace.viz, mps * (timeMs - e), offsetDb, true);
+      }
     }
     particleGeo.setDrawRange(0, n);
     particleGeo.getAttribute('position').needsUpdate = true;
@@ -518,7 +595,7 @@ function createViewport(container) {
     sync,
     select: updateGizmo,
     setTool, setSnap, setView,
-    setResult, setTime,
+    setResult, setTime, frameSelected,
     refreshLines() { buildRayLines(); buildRxLines(); },
     get snap() { return snap; },
   };

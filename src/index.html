@@ -154,6 +154,12 @@
         <button class="btn btn-chip" data-view="front">Front</button>
         <button class="btn btn-chip" data-view="side">Side</button>
         <button class="btn btn-chip" data-view="sensor" title="Look from the active sensor">Sensor</button>
+        <span class="vp-sep-v"></span>
+        <button class="btn btn-chip" id="btn-focus" title="Zoom to the selected object (F)">Focus</button>
+        <button class="btn btn-chip" id="btn-reset-view" title="Back to the default view (H)">
+          <svg viewBox="0 0 24 24"><path d="M4 11 12 4l8 7M6 9.5V20h12V9.5" /></svg>
+          Reset view
+        </button>
       </div>
 
       <div class="vp-overlay vp-legend" aria-label="Intensity legend">
@@ -251,6 +257,10 @@
             <div class="field-row"><label>Ping interval</label>
               <div class="num-unit"><input type="number" data-bind="interval" step="5" min="5" max="1000"><span class="unit">ms</span></div>
             </div>
+            <div class="field-row"><label>Ping offset</label>
+              <div class="num-unit"><input type="number" data-bind="pingOffset" step="1" min="0" max="1000"><span class="unit">ms</span></div>
+            </div>
+            <p class="hint">Other sensors in the scene can hear this one's pings. The interval and offset set when it fires relative to them.</p>
           </details>
         </div>
 
@@ -366,20 +376,22 @@
             <div class="field-row"><label>Level</label>
               <div class="slider"><input type="range" data-bind="level" min="40" max="130" step="1"><output data-out="level" data-unit=" dB SPL"></output></div>
             </div>
-            <div class="field-row"><label>Directivity</label>
-              <div class="slider"><input type="range" data-bind="directivity" min="5" max="180" step="1"><output data-out="directivity" data-unit="°"></output></div>
+            <div class="field-row"><label>Beam angle</label>
+              <div class="slider"><input type="range" data-bind="directivity" min="5" max="90" step="1"><output data-out="directivity" data-unit="°" data-omni="90"></output></div>
             </div>
-            <div class="field-row"><label>Mode</label>
+            <div class="field-row" data-show-when="emission=sensor"><label>Mode</label>
               <div class="segmented" data-bind="mode" role="radiogroup">
                 <button data-value="pulsed">Pulsed</button><button data-value="continuous">Continuous</button>
               </div>
             </div>
-            <div class="field-row"><label>Period</label>
-              <div class="num-unit"><input type="number" data-bind="period" step="1" min="1"><span class="unit">ms</span></div>
+            <div class="field-row" data-show-when="emission=sensor mode=pulsed"><label>Period</label>
+              <div class="num-unit"><input type="number" data-bind="period" step="1" min="1" max="1000"><span class="unit">ms</span></div>
             </div>
-            <div class="field-row"><label>Start offset</label>
-              <div class="num-unit"><input type="number" data-bind="offset" step="0.5" min="0"><span class="unit">ms</span></div>
+            <div class="field-row" data-show-when="emission=sensor mode=pulsed"><label>Start offset</label>
+              <div class="num-unit"><input type="number" data-bind="offset" step="0.5" min="0" max="1000"><span class="unit">ms</span></div>
             </div>
+            <p class="hint" data-show-when="emission=sensor mode=pulsed">Fires every <i>period</i> ms, starting <i>offset</i> ms after the active sensor's first ping. When the period differs from the sensor's ping interval, false echoes move from ping to ping. Turn on Loop to watch.</p>
+            <p class="hint" data-show-when="emission=hiss">Hiss is spread evenly over 20–100 kHz, so the sensor only hears the slice inside its band.</p>
           </details>
 
           <div class="callout" id="source-band"></div>
@@ -458,9 +470,13 @@
               <option value="20000">20 000</option>
             </select>
           </div>
+          <div class="field-row"><label>Wavefront range</label>
+            <div class="slider"><input type="range" data-bind="vizRangeDb" min="6" max="90" step="1"><output data-out="vizRangeDb" data-unit=" dB"></output></div>
+          </div>
+          <p class="hint">Only rays launched within this many dB of the beam axis are drawn. Around 6 dB matches the beam cone; 40 dB or more also shows the weak side lobes. This setting only changes the drawing, not the simulation.</p>
           <div class="field-row"><label>Colour by</label>
             <div class="segmented" data-bind="colorBy" role="radiogroup">
-              <button data-value="intensity">Intensity</button><button data-value="bounce">Bounce #</button><button data-value="source">Source</button>
+              <button data-value="intensity">Intensity</button><button data-value="bounce">Bounces</button><button data-value="source">Source</button>
             </div>
           </div>
         </details>
@@ -476,7 +492,8 @@
           <button class="tab" role="tab" data-pane="history">Distance history</button>
         </div>
         <div class="dock-legend">
-          <span><i class="sw sw-echo"></i>Received</span>
+          <span><i class="sw sw-echo"></i>Own echoes</span>
+          <span><i class="sw sw-interf"></i>Interference</span>
           <span><i class="sw sw-thresh"></i>Threshold</span>
           <span><i class="sw sw-true"></i>True distance</span>
         </div>
@@ -549,19 +566,24 @@
       <li>Rotate the wall a few degrees at a time and watch the echo drop out once the mirror bounce misses the sensor.</li>
       <li>Swap concrete for acoustic foam and see the echo sink under the threshold.</li>
       <li>Change the temperature: the real echo time changes, but the sensor still assumes 20 °C.</li>
+      <li>Load <i>Crosstalk: two sensors</i>, turn on Loop and watch false echoes from Sensor B creep closer every ping.
+        Give both the same interval with offsets 30 ms apart and the problem goes away.</li>
     </ul>
     <h3>Controls</h3>
+    <p class="muted">Mouse: drag to orbit, scroll to zoom, right-drag to pan. If you get lost, press <b>H</b> or <b>Reset view</b>.</p>
     <dl class="keys">
       <div><dt>Space</dt><dd>Ping / pause</dd></div>
       <div><dt>Q W E R</dt><dd>Select / move / rotate / resize tool</dd></div>
       <div><dt>S</dt><dd>Toggle snapping</dd></div>
+      <div><dt>F</dt><dd>Focus on selected</dd></div>
+      <div><dt>H</dt><dd>Reset view</dd></div>
       <div><dt>Del</dt><dd>Delete selected</dd></div>
       <div><dt>Ctrl + D</dt><dd>Duplicate selected</dd></div>
       <div><dt>Esc</dt><dd>Deselect</dd></div>
     </dl>
     <h3>Model and limits</h3>
     <p class="muted">Geometric ray tracing, so no diffraction and no phase interference. Echo levels are in dB SPL at the sensor.
-      Interfering sources can be placed but don't emit yet; that comes in the next phase.</p>
+      Other sensors and interference sources are filtered by the active sensor's frequency band and timed against its pings.</p>
     <form method="dialog"><button class="btn btn-primary">Close</button></form>
   </dialog>
 

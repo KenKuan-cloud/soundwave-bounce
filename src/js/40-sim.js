@@ -12,6 +12,7 @@ function createSim({ viewport, echoChart, historyChart }) {
   let speed = 0.005; // simulated ms per real ms
   let lastTraceAt = 0;
   let pending = null;
+  let pingIndex = 0; // which ping of the active sensor (interference timing depends on it)
 
   const timeline = $('#timeline');
   const playBtn = $('#btn-play');
@@ -21,7 +22,12 @@ function createSim({ viewport, echoChart, historyChart }) {
     pending = null;
     const s = store.activeSensor();
     result = s ? traceSensor(store.state, s) : null;
+    if (result && pingIndex) composePing(result, pingIndex);
     lastTraceAt = performance.now();
+    showResult();
+  }
+
+  function showResult() {
     viewport.setResult(result);
     echoChart.setResult(result);
     const tMax = result ? result.tMax : 40;
@@ -57,7 +63,13 @@ function createSim({ viewport, echoChart, historyChart }) {
     timeline.value = String(t);
     const c = result ? result.c : speedOfSound(store.state.env.temperature);
     $('#vp-t').textContent = fmt(t, 2);
-    $('#vp-dist').textContent = `pulse travelled ${fmt(c * t / 1000, 2)} m`;
+    $('#vp-dist').textContent = `ping #${pingIndex + 1} · pulse travelled ${fmt(c * t / 1000, 2)} m`;
+  }
+
+  // Move to another ping: only interference timing changes, no re-trace.
+  function setPing(n) {
+    pingIndex = n;
+    if (result) { composePing(result, pingIndex); showResult(); }
   }
 
   function setPlaying(on) {
@@ -80,7 +92,7 @@ function createSim({ viewport, echoChart, historyChart }) {
       let next = t + dt * speed;
       if (next >= result.tMax) {
         pingFinished();
-        if (loop) next = 0;
+        if (loop) { next = 0; setPing(pingIndex + 1); }
         else { next = result.tMax; setPlaying(false); }
       }
       setTime(next);
@@ -135,6 +147,14 @@ function createSim({ viewport, echoChart, historyChart }) {
 
     const measured = det.distance;
     const source = det.label ? det.label : 'an unknown path';
+    if (det.interference) {
+      setReadout('#ro-measured', fmt(measured, 2), 'is-bad');
+      setReadout('#ro-error', truth == null ? null : (measured > truth ? '+' : '') + fmt(measured - truth, 2), 'is-bad');
+      status.textContent = 'False echo';
+      status.className = 'status-pill status-bad';
+      msg.textContent = `Triggered by ${source} at ${fmt(det.tMs, 2)} ms. That's not a real echo.`;
+      return;
+    }
     if (truth == null) {
       setReadout('#ro-measured', fmt(measured, 2), 'is-warn');
       setReadout('#ro-error', null);
@@ -160,7 +180,28 @@ function createSim({ viewport, echoChart, historyChart }) {
     body.replaceChildren();
     if (!result) return;
     const det = result.detection;
-    const rows = result.groups.slice(0, 30); // strongest first
+    // Own echoes and interference in one list, strongest first.
+    const rows = result.groups.slice(0, 30).map((g) => ({
+      tMs: g.tPeak, levelDb: g.levelDb, label: g.label,
+      detected: det && !det.interference && g.label === det.label && Math.abs(g.tPeak - det.tMs) < 0.5,
+    }));
+    for (const it of result.interferers) {
+      if (!it.trace) continue;
+      const gainDb = it.levelDb + it.bandGainDb;
+      for (const g of [...it.trace.groups.values()].sort((a, b) => b.power - a.power).slice(0, 5)) {
+        const levelDb = gainDb + 10 * Math.log10(g.power);
+        if (levelDb < AMBIENT_NOISE_DB - 10) continue;
+        // Place the path at the first arrival inside this ping's window.
+        const arrival = it.continuous ? null : it.emissions.map((e) => e + g.tPeak).find((t) => t >= 0 && t <= result.tMax);
+        if (!it.continuous && arrival === undefined) continue;
+        rows.push({
+          tMs: arrival, levelDb, interf: true,
+          label: `${it.name}: ${g.label}${it.bandGainDb < -0.5 ? ` (band filter ${fmt(it.bandGainDb, 1)} dB)` : ''}`,
+          detected: det && det.interference && det.sourceId === it.id && arrival != null && Math.abs(arrival - det.tMs) < 0.5,
+        });
+      }
+    }
+    rows.sort((a, b) => b.levelDb - a.levelDb);
     if (!rows.length) {
       const tr = body.insertRow();
       const td = tr.insertCell();
@@ -169,13 +210,12 @@ function createSim({ viewport, echoChart, historyChart }) {
       td.textContent = 'No echoes reached the sensor.';
       return;
     }
-    for (const g of rows) {
+    for (const g of rows.slice(0, 40)) {
       const tr = body.insertRow();
-      if (det && g.label === det.label && Math.abs(g.tPeak - det.tMs) < 0.5) tr.className = 'is-detected';
-      else if (g.levelDb < result.threshold) tr.className = 'is-below';
+      tr.className = [g.detected ? 'is-detected' : g.levelDb < result.threshold ? 'is-below' : '', g.interf ? 'is-interf' : ''].join(' ').trim();
       const cells = [
-        [`${fmt(g.tPeak, 2)} ms`, 'mono'],
-        [`${fmt(C_ASSUMED * g.tPeak / 2000, 2)} m`, 'mono'],
+        [g.tMs == null ? 'continuous' : `${fmt(g.tMs, 2)} ms`, 'mono'],
+        [g.tMs == null ? '—' : `${fmt(C_ASSUMED * g.tMs / 2000, 2)} m`, 'mono'],
         [`${fmt(g.levelDb, 1)} dB`, 'mono'],
         [g.label, 'path'],
       ];
@@ -207,7 +247,7 @@ function createSim({ viewport, echoChart, historyChart }) {
       if (!playing && t >= result.tMax) setTime(0);
       setPlaying(!playing);
     },
-    reset() { setPlaying(false); setTime(0); },
+    reset() { setPlaying(false); setTime(0); if (pingIndex) setPing(0); },
     step(dir) {
       setPlaying(false);
       const tMax = result ? result.tMax : 40;

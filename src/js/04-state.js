@@ -12,7 +12,7 @@ function defaultEnv() {
 }
 
 function defaultSim() {
-  return { rays: 20000, maxBounces: 6, cutoffDb: -90, rxRadius: 0.01, particles: 5000, colorBy: 'intensity' };
+  return { rays: 20000, maxBounces: 6, cutoffDb: -90, rxRadius: 0.01, particles: 5000, colorBy: 'intensity', vizRangeDb: 20 };
 }
 
 function defaultDisplay() {
@@ -29,7 +29,7 @@ function makeItem(type, over = {}) {
       item = {
         ...base, pos: v3(0, 1, 0), yaw: 0, pitch: 0,
         model: 'generic58', freq: 58, bw: 4, halfAngle: 18,
-        txLevel: 115, cycles: 8, interval: 60,
+        txLevel: 115, cycles: 8, interval: 60, pingOffset: 0,
         threshold: 60, blanking: 1.2, maxRange: 6,
       };
       break;
@@ -78,8 +78,8 @@ const PRESETS = {
     label: 'Demo room',
     items: () => [
       makeItem('sensor', { name: 'Sensor A', pos: { x: -3, y: 1, z: 0 } }),
-      makeItem('source', { name: 'Neighbour sensor', pos: { x: -1, y: 1.2, z: 3 }, yaw: -60 }),
-      makeItem('source', { name: 'Air leak', emission: 'hiss', freq: 60, level: 80, directivity: 180, mode: 'continuous', pos: { x: 3.6, y: 0.3, z: -3.4 } }),
+      makeItem('source', { name: 'Neighbour sensor', pos: { x: -1, y: 1.2, z: 3 }, yaw: 30 }),
+      makeItem('source', { name: 'Air leak', emission: 'hiss', freq: 60, level: 80, directivity: 90, mode: 'continuous', pos: { x: 3.6, y: 0.3, z: -3.4 } }),
       withMaterial('wall', 'concrete', { name: 'Wall', pos: { x: 2, y: 1, z: 0 }, rot: { y: 20 } }),
       withMaterial('block', 'wood', { name: 'Block', pos: { x: 0.3, y: 0.4, z: -1.9 }, rot: { y: 30 } }),
       withMaterial('pipe', 'steel', { name: 'Pipe', pos: { x: 0.1, y: 1.2, z: 1.4 } }),
@@ -118,9 +118,17 @@ const PRESETS = {
     label: 'Foam vs concrete',
     items: () => [
       makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0.8 } }),
-      makeItem('sensor', { name: 'Sensor B', pos: { x: -2, y: 1, z: -0.8 } }),
+      makeItem('sensor', { name: 'Sensor B', pos: { x: -2, y: 1, z: -0.8 }, pingOffset: 25 }),
       withMaterial('block', 'concrete', { name: 'Concrete block', pos: { x: 1, y: 1, z: 0.8 }, size: { x: 0.3, y: 2, z: 1.2 } }),
       withMaterial('block', 'foam', { name: 'Foam block', pos: { x: 1, y: 1, z: -0.8 }, size: { x: 0.3, y: 2, z: 1.2 } }),
+    ],
+  },
+  crosstalk: {
+    label: 'Crosstalk: two sensors',
+    items: () => [
+      makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0.6 }, yaw: -8 }),
+      makeItem('sensor', { name: 'Sensor B', pos: { x: -2, y: 1, z: -0.6 }, yaw: 8, interval: 55 }),
+      withMaterial('wall', 'concrete', { name: 'Wall', pos: { x: 2.5, y: 1, z: 0 } }),
     ],
   },
   empty: {
@@ -169,7 +177,8 @@ const store = {
 
   loadPreset(key) {
     const p = PRESETS[key] || PRESETS.demo;
-    this.load({ items: p.items() });
+    // Keep the user's simulation and display settings across scenes.
+    this.load({ items: p.items(), sim: this.state?.sim, display: this.state?.display });
   },
 
   serialize() {

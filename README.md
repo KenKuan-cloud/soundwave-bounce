@@ -15,7 +15,7 @@ file. It needs internet access the first time to load Three.js from a CDN.
 | 1 | Scene editing: add / select / move / rotate / resize / delete, materials, presets, save / open JSON | ✅ |
 | 2 | Sensor + ray tracing: beam pattern, reflections, spreading, air absorption, detection | ✅ |
 | 3 | Visualisation: animated wavefront, timeline, echo (A-scan) chart, ray log, distance history | ✅ |
-| 4 | Interfering ultrasonic sources (crosstalk, false echoes) | ⏳ next |
+| 4 | Interfering ultrasonic sources and other sensors: crosstalk, false echoes, band filter, ping timing | ✅ |
 | 5 | Polish (more presets, intensity slice plane, multi-sensor view) | ⏳ |
 
 ## How the simulation works
@@ -38,6 +38,12 @@ pipes, so sound is traced like light (geometric acoustics):
   compared to the threshold after the blanking time. The sensor converts the
   first crossing to distance with the speed of sound at 20 °C, like real
   firmware. That is why temperature changes show up as a distance error.
+- **Interference:** every other emitter (interference sources and other
+  sensors) is traced to the active sensor the same way, including the direct
+  path. It is scaled by the sensor's band-pass filter (4th order, −3 dB at the
+  band edges; broadband hiss counts only the slice in band) and placed in time
+  by when it fires relative to the sensor's ping. When the intervals differ,
+  false echoes move from ping to ping. Turn on Loop to see it.
 - **Not modelled:** diffraction and phase interference.
 
 ## Development
