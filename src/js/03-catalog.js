@@ -15,7 +15,7 @@ const MATERIALS = {
 
 const SENSOR_MODELS = {
   generic58: { label: 'Generic 58 kHz',               freq: 58, bw: 4, halfAngle: 18 },
-  hcsr04:    { label: 'HC-SR04 (40 kHz)',             freq: 40, bw: 2, halfAngle: 15 },
+  hcsr04:    { label: '40 kHz narrow (HC-SR04 class)', freq: 40, bw: 2, halfAngle: 15 },
   maxbotix:  { label: 'MaxBotix-style (42 kHz, wide)', freq: 42, bw: 3, halfAngle: 30 },
   custom:    { label: 'Custom',                        freq: null, bw: null, halfAngle: null },
 };
@@ -25,6 +25,9 @@ const TYPE_LABELS = {
 };
 
 const SHAPE_TYPES = ['wall', 'block', 'pipe', 'sphere'];
+
+// Smallest pipe the tool accepts (m).
+const MIN_PIPE_RADIUS = 0.03;
 
 // Ambient ultrasonic noise at the receiver, dB SPL.
 const AMBIENT_NOISE_DB = 20;

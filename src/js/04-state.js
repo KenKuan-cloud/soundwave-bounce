@@ -147,8 +147,8 @@ const PRESETS = {
     label: 'Pipe rack (thin vs thick)',
     items: () => [
       makeItem('sensor', { name: 'Sensor A', pos: { x: -2.5, y: 1, z: 0 } }),
-      withMaterial('pipe', 'steel', { name: 'Pipe Ø20 mm', pos: { x: -0.5, y: 1.2, z: 0.15 }, radius: 0.01 }),
-      withMaterial('pipe', 'steel', { name: 'Pipe Ø60 mm', pos: { x: 0.5, y: 1.2, z: -0.1 }, radius: 0.03 }),
+      withMaterial('pipe', 'steel', { name: 'Pipe Ø60 mm', pos: { x: -0.5, y: 1.2, z: 0.15 }, radius: 0.03 }),
+      withMaterial('pipe', 'steel', { name: 'Pipe Ø100 mm', pos: { x: 0.5, y: 1.2, z: -0.1 }, radius: 0.05 }),
       withMaterial('pipe', 'steel', { name: 'Pipe Ø200 mm', pos: { x: 1.6, y: 1.2, z: 0.05 }, radius: 0.1 }),
     ],
   },
@@ -215,6 +215,7 @@ const store = {
     for (const raw of items) {
       if (!TYPE_LABELS[raw.type]) continue;
       const item = makeItem(raw.type, raw);
+      if (item.type === 'pipe') item.radius = Math.max(MIN_PIPE_RADIUS, item.radius);
       if (!item.id || this.state.items.some((i) => i.id === item.id)) item.id = this.newId(item.type);
       if (!item.name) item.name = TYPE_LABELS[item.type];
       this.state.items.push(item);

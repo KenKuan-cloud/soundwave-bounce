@@ -147,15 +147,22 @@ function createViewport(container) {
 
     if (item.type === 'sensor') {
       root.rotation.order = 'YZX';
+      // One transducer that both sends and receives: a round can on a small
+      // mounting plate, with its face (the membrane) at the sensor position.
       const body = new THREE.Group();
-      body.add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.45), new THREE.MeshStandardMaterial({ color: 0x1f6fb2, roughness: 0.6 })));
-      const canMat = new THREE.MeshStandardMaterial({ color: 0xc9d2dc, metalness: 0.7, roughness: 0.35 });
-      for (const z of [-0.12, 0.12]) {
-        const can = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.1, 32), canMat);
-        can.rotation.z = Math.PI / 2;
-        can.position.set(0.065, 0, z);
-        body.add(can);
-      }
+      body.add(new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.18, 0.18), new THREE.MeshStandardMaterial({ color: 0x1f6fb2, roughness: 0.6 })));
+      const can = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.06, 0.06, 0.09, 40),
+        new THREE.MeshStandardMaterial({ color: 0xc9d2dc, metalness: 0.7, roughness: 0.35 })
+      );
+      can.rotation.z = Math.PI / 2;
+      can.position.x = 0.055;
+      body.add(can);
+      const face = new THREE.Mesh(new THREE.CircleGeometry(0.05, 40), new THREE.MeshStandardMaterial({ color: 0x2a3340, roughness: 0.9 }));
+      face.rotation.y = Math.PI / 2;
+      face.position.x = 0.1005;
+      body.add(face);
+      body.position.x = -0.1; // face sits at the sensor's position
       root.add(body);
       body.traverse((o) => { if (o.isMesh) pickables.push(o); });
       view.selectTarget = body;
@@ -328,7 +335,7 @@ function createViewport(container) {
     if (tool === 'scale' && SHAPE_TYPES.includes(item.type)) {
       const s = r.scale;
       const pos = (v) => Math.max(0.01, round(v));
-      if (item.type === 'pipe') { item.radius = pos(item.radius * Math.max(s.x, s.z)); item.length = pos(item.length * s.y); }
+      if (item.type === 'pipe') { item.radius = Math.max(MIN_PIPE_RADIUS, round(item.radius * Math.max(s.x, s.z))); item.length = pos(item.length * s.y); }
       else if (item.type === 'sphere') { item.radius = pos(item.radius * Math.max(s.x, s.y, s.z)); }
       else { item.size.x = pos(item.size.x * s.x); item.size.y = pos(item.size.y * s.y); item.size.z = pos(item.size.z * s.z); }
       r.scale.set(1, 1, 1);

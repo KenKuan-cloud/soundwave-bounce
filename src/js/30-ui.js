@@ -163,7 +163,8 @@ function initUI({ viewport, sim }) {
       } else if (el.type === 'checkbox') {
         el.checked = !!v;
       } else if (el.type === 'number') {
-        el.value = String(Math.round(v * 1000) / 1000);
+        // data-scale shows a value in other units (e.g. metres as cm).
+        el.value = String(Math.round(v * Number(el.dataset.scale || 1) * 1000) / 1000);
       } else {
         el.value = String(v);
       }
@@ -189,14 +190,15 @@ function initUI({ viewport, sim }) {
       if (el.value === '' || !Number.isFinite(v)) return undefined;
       const min = el.min !== '' ? Number(el.min) : -Infinity;
       const max = el.max !== '' ? Number(el.max) : Infinity;
+      const scale = Number(el.dataset.scale || 1);
       if (v < min || v > max) {
         // Clamp once editing is done; while typing, just wait.
         if (eventType !== 'change') return undefined;
         const c = clamp(v, min, max);
         el.value = String(c);
-        return c;
+        return c / scale;
       }
-      return v;
+      return v / scale;
     }
     return el.value;
   }
@@ -625,7 +627,29 @@ function initUI({ viewport, sim }) {
 
   // ── Help ──
   const help = $('#help-dialog');
-  $('#btn-help').addEventListener('click', () => help.showModal());
+  function showHelpPage(page) {
+    $$('[data-help-tab]', help).forEach((b) => {
+      const on = b.dataset.helpTab === page;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', String(on));
+    });
+    $$('[data-help-page]', help).forEach((p) => { p.hidden = p.dataset.helpPage !== page; });
+    $('.help-pages', help).scrollTop = 0;
+  }
+  function openHelp(page = 'start') {
+    showHelpPage(page);
+    if (!help.open) help.showModal();
+  }
+  $('#btn-help').addEventListener('click', () => openHelp());
+  $$('[data-help-tab]', help).forEach((b) => b.addEventListener('click', () => showHelpPage(b.dataset.helpTab)));
+  // "?" buttons inside settings group headings: open help without toggling the group.
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('.help-link');
+    if (!link) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openHelp(link.dataset.help);
+  }, true);
 
   // ── Keyboard ──
   window.addEventListener('keydown', (e) => {
@@ -644,6 +668,7 @@ function initUI({ viewport, sim }) {
     const tools = { q: 'select', w: 'move', e: 'rotate', r: 'scale' };
     if (tools[k]) { setTool(tools[k]); return; }
     if (k === 's') { toggleSnap(); return; }
+    if (k === '?' ) { openHelp(); return; }
     if (k === 'h' || k === 'home') { resetView(); return; }
     if (k === 'f') { focusSelected(); return; }
     if (k === '+' || k === '=') { viewport.zoomBy(1 / 1.15); return; }
