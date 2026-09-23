@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Soundwave Bounce</title>
+  <meta name="description" content="3D ultrasonic reflection simulator: place a sensor, walls, blocks, pipes and interfering sources and watch the echoes.">
+  <!-- @inline-css -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="app">
+
+    <!-- ───────────── Top bar ───────────── -->
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 11v2" />
+        </svg>
+        <span class="brand-name">Soundwave Bounce</span>
+        <span class="badge badge-preview" title="Buttons and values are placeholders">UI preview</span>
+      </div>
+
+      <div class="toolbar-group" role="group" aria-label="File">
+        <button class="btn btn-ghost" title="New scene">New</button>
+        <button class="btn btn-ghost" title="Open scene (.json)">Open</button>
+        <button class="btn btn-ghost" title="Save scene (.json)">Save</button>
+        <button class="btn btn-ghost" title="Scene presets">Presets ▾</button>
+      </div>
+
+      <div class="toolbar-group transport" role="group" aria-label="Simulation">
+        <button class="btn btn-icon" title="Reset">
+          <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5" /></svg>
+        </button>
+        <button class="btn btn-icon" title="Step back">
+          <svg viewBox="0 0 24 24"><path d="M18 6 10 12l8 6zM7 6v12" /></svg>
+        </button>
+        <button class="btn btn-primary btn-play" title="Fire ping / play">
+          <svg viewBox="0 0 24 24"><path d="M7 5v14l12-7z" /></svg>
+          <span>Ping</span>
+        </button>
+        <button class="btn btn-icon" title="Step forward">
+          <svg viewBox="0 0 24 24"><path d="m6 6 8 6-8 6zM17 6v12" /></svg>
+        </button>
+        <label class="select-inline" title="Playback speed">
+          <span>Speed</span>
+          <select>
+            <option>1/1000×</option>
+            <option selected>1/200×</option>
+            <option>1/50×</option>
+            <option>1/10×</option>
+          </select>
+        </label>
+        <label class="switch" title="Repeat pings continuously">
+          <input type="checkbox">
+          <span class="switch-track"></span>
+          <span>Loop</span>
+        </label>
+      </div>
+
+      <div class="toolbar-group" role="group" aria-label="View">
+        <button class="btn btn-ghost" title="Help">?</button>
+      </div>
+    </header>
+
+    <!-- ───────────── Left: scene outliner ───────────── -->
+    <aside class="panel panel-left" aria-label="Scene">
+      <section class="panel-section">
+        <h2 class="panel-title">Add</h2>
+        <div class="add-grid">
+          <button class="add-tile" data-add="wall">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 10h16M4 14.5h16M10 5v5M15 10v4.5M8 14.5V19M16 14.5V19" /></svg>
+            <span>Wall</span>
+          </button>
+          <button class="add-tile" data-add="block">
+            <svg viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12 4 7.5M12 12v9" /></svg>
+            <span>Block</span>
+          </button>
+          <button class="add-tile" data-add="pipe">
+            <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="5" ry="2.5" /><path d="M7 5.5v13c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-13" /></svg>
+            <span>Pipe</span>
+          </button>
+          <button class="add-tile" data-add="sphere">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><ellipse cx="12" cy="12" rx="8" ry="3" /></svg>
+            <span>Sphere</span>
+          </button>
+          <button class="add-tile" data-add="sensor">
+            <svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1.5" /><circle cx="8" cy="12" r="2.2" /><circle cx="16" cy="12" r="2.2" /></svg>
+            <span>Sensor</span>
+          </button>
+          <button class="add-tile add-tile-source" data-add="source">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5" /><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14" /></svg>
+            <span>Source</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="panel-section panel-grow">
+        <h2 class="panel-title">
+          Scene
+          <span class="count">7</span>
+        </h2>
+        <ul class="outliner" role="listbox" aria-label="Scene objects">
+          <li class="outliner-group">Sensors</li>
+          <li class="outliner-item is-selected" data-id="sensor1" data-kind="sensor" role="option">
+            <span class="dot dot-sensor"></span>Sensor A · 58 kHz
+            <button class="eye" title="Hide">◉</button>
+          </li>
+          <li class="outliner-group">Interference sources</li>
+          <li class="outliner-item" data-id="source1" data-kind="source" role="option">
+            <span class="dot dot-source"></span>Neighbour sensor · 57 kHz
+            <button class="eye" title="Hide">◉</button>
+          </li>
+          <li class="outliner-item" data-id="source2" data-kind="source" role="option">
+            <span class="dot dot-source"></span>Air leak · 40–80 kHz
+            <button class="eye" title="Hide">◉</button>
+          </li>
+          <li class="outliner-group">Objects</li>
+          <li class="outliner-item" data-id="wall1" data-kind="object" role="option">
+            <span class="dot dot-object"></span>Wall · concrete
+            <button class="eye" title="Hide">◉</button>
+          </li>
+          <li class="outliner-item" data-id="block1" data-kind="object" role="option">
+            <span class="dot dot-object"></span>Block · wood
+            <button class="eye" title="Hide">◉</button>
+          </li>
+          <li class="outliner-item" data-id="pipe1" data-kind="object" role="option">
+            <span class="dot dot-object"></span>Pipe · steel
+            <button class="eye" title="Hide">◉</button>
+          </li>
+          <li class="outliner-item" data-id="floor" data-kind="object" role="option">
+            <span class="dot dot-object"></span>Floor · concrete
+            <button class="eye" title="Hide">◉</button>
+          </li>
+        </ul>
+      </section>
+
+      <section class="panel-section">
+        <h2 class="panel-title">Display</h2>
+        <label class="check"><input type="checkbox" checked> Wavefront particles</label>
+        <label class="check"><input type="checkbox" checked> Beam cone</label>
+        <label class="check"><input type="checkbox"> All ray paths</label>
+        <label class="check"><input type="checkbox" checked> Rays that reach sensor</label>
+        <label class="check"><input type="checkbox"> Intensity slice plane</label>
+        <label class="check"><input type="checkbox" checked> Grid &amp; axes</label>
+      </section>
+    </aside>
+
+    <!-- ───────────── Center: viewport ───────────── -->
+    <main class="viewport-wrap">
+      <div id="viewport" class="viewport" aria-label="3D view"></div>
+
+      <div class="vp-overlay vp-tools" role="toolbar" aria-label="Transform tools">
+        <button class="btn btn-icon is-active" title="Select (Q)">
+          <svg viewBox="0 0 24 24"><path d="m5 3 14 8-6 1.5L10 19z" /></svg>
+        </button>
+        <button class="btn btn-icon" title="Move (W)">
+          <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" /></svg>
+        </button>
+        <button class="btn btn-icon" title="Rotate (E)">
+          <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>
+        </button>
+        <button class="btn btn-icon" title="Scale (R)">
+          <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 13h7v7h-7zM11 11l2 2" /></svg>
+        </button>
+        <span class="vp-sep"></span>
+        <button class="btn btn-icon" title="Snap to grid">
+          <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16" /></svg>
+        </button>
+      </div>
+
+      <div class="vp-overlay vp-views" role="group" aria-label="Camera">
+        <button class="btn btn-chip is-active">Persp</button>
+        <button class="btn btn-chip">Top</button>
+        <button class="btn btn-chip">Front</button>
+        <button class="btn btn-chip">Side</button>
+        <button class="btn btn-chip" title="Look from the sensor">Sensor</button>
+      </div>
+
+      <div class="vp-overlay vp-legend" aria-label="Intensity legend">
+        <span class="legend-label">Intensity</span>
+        <div class="legend-bar"></div>
+        <div class="legend-ticks"><span>0 dB</span><span>−30</span><span>−60</span><span>−90</span></div>
+      </div>
+
+      <div class="vp-overlay vp-time">
+        <span class="mono">t = <b>14.62</b> ms</span>
+        <span class="mono muted">pulse at 5.02 m</span>
+      </div>
+    </main>
+
+    <!-- ───────────── Right: inspector ───────────── -->
+    <aside class="panel panel-right" aria-label="Properties">
+      <div class="tabs" role="tablist">
+        <button class="tab is-active" role="tab" data-tab="props">Properties</button>
+        <button class="tab" role="tab" data-tab="env">Environment</button>
+        <button class="tab" role="tab" data-tab="sim">Simulation</button>
+      </div>
+
+      <!-- Properties tab: one block per object kind -->
+      <div class="tab-page is-active" data-page="props">
+
+        <!-- Sensor -->
+        <div class="inspector" data-kind="sensor">
+          <div class="inspector-head">
+            <span class="dot dot-sensor"></span>
+            <input class="name-input" value="Sensor A">
+            <button class="btn btn-icon btn-danger" title="Delete">
+              <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" /></svg>
+            </button>
+          </div>
+
+          <details class="group" open>
+            <summary>Transform</summary>
+            <div class="field-row"><label>Position</label>
+              <div class="vec3">
+                <span class="axis x">X</span><input type="number" value="-3.00" step="0.05">
+                <span class="axis y">Y</span><input type="number" value="0.50" step="0.05">
+                <span class="axis z">Z</span><input type="number" value="0.00" step="0.05">
+              </div>
+            </div>
+            <div class="field-row"><label>Aim</label>
+              <div class="vec2">
+                <span class="axis">Yaw</span><input type="number" value="0" step="1"><span class="unit">°</span>
+                <span class="axis">Pitch</span><input type="number" value="0" step="1"><span class="unit">°</span>
+              </div>
+            </div>
+          </details>
+
+          <details class="group" open>
+            <summary>Transducer</summary>
+            <div class="field-row"><label>Model</label>
+              <select>
+                <option selected>Generic 58 kHz</option>
+                <option>HC-SR04 (40 kHz)</option>
+                <option>MaxBotix-style (42 kHz, wide)</option>
+                <option>Custom…</option>
+              </select>
+            </div>
+            <div class="field-row"><label>Frequency</label>
+              <div class="num-unit"><input type="number" value="58" step="0.5"><span class="unit">kHz</span></div>
+            </div>
+            <div class="field-row"><label>Bandwidth</label>
+              <div class="num-unit"><input type="number" value="4" step="0.5"><span class="unit">kHz</span></div>
+            </div>
+            <div class="field-row"><label>Beam angle</label>
+              <div class="slider"><input type="range" min="5" max="60" value="18"><output>18°</output></div>
+            </div>
+            <div class="field-row"><label>Tx level</label>
+              <div class="slider"><input type="range" min="90" max="130" value="115"><output>115 dB SPL</output></div>
+            </div>
+            <div class="field-row"><label>Pulse</label>
+              <div class="num-unit"><input type="number" value="8" step="1"><span class="unit">cycles</span></div>
+            </div>
+            <div class="field-row"><label>Ping interval</label>
+              <div class="num-unit"><input type="number" value="60" step="5"><span class="unit">ms</span></div>
+            </div>
+          </details>
+
+          <details class="group" open>
+            <summary>Receiver</summary>
+            <div class="field-row"><label>Threshold</label>
+              <div class="slider"><input type="range" min="-100" max="-20" value="-62"><output>−62 dB</output></div>
+            </div>
+            <div class="field-row"><label>Blanking</label>
+              <div class="num-unit"><input type="number" value="1.2" step="0.1"><span class="unit">ms</span></div>
+            </div>
+            <div class="field-row"><label>Max range</label>
+              <div class="num-unit"><input type="number" value="6.0" step="0.5"><span class="unit">m</span></div>
+            </div>
+          </details>
+        </div>
+
+        <!-- Object (wall / block / pipe / sphere) -->
+        <div class="inspector" data-kind="object" hidden>
+          <div class="inspector-head">
+            <span class="dot dot-object"></span>
+            <input class="name-input" value="Wall">
+            <button class="btn btn-icon btn-danger" title="Delete">
+              <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" /></svg>
+            </button>
+          </div>
+
+          <details class="group" open>
+            <summary>Shape</summary>
+            <div class="segmented" role="radiogroup">
+              <button class="is-active">Wall</button><button>Block</button><button>Pipe</button><button>Sphere</button>
+            </div>
+            <div class="field-row"><label>Size</label>
+              <div class="vec3">
+                <span class="axis">W</span><input type="number" value="0.10" step="0.05">
+                <span class="axis">H</span><input type="number" value="2.00" step="0.05">
+                <span class="axis">D</span><input type="number" value="4.00" step="0.05">
+              </div>
+            </div>
+          </details>
+
+          <details class="group" open>
+            <summary>Transform</summary>
+            <div class="field-row"><label>Position</label>
+              <div class="vec3">
+                <span class="axis x">X</span><input type="number" value="2.00" step="0.05">
+                <span class="axis y">Y</span><input type="number" value="1.00" step="0.05">
+                <span class="axis z">Z</span><input type="number" value="0.00" step="0.05">
+              </div>
+            </div>
+            <div class="field-row"><label>Rotation</label>
+              <div class="vec3">
+                <span class="axis x">X</span><input type="number" value="0" step="1">
+                <span class="axis y">Y</span><input type="number" value="20" step="1">
+                <span class="axis z">Z</span><input type="number" value="0" step="1">
+              </div>
+            </div>
+          </details>
+
+          <details class="group" open>
+            <summary>Surface</summary>
+            <div class="field-row"><label>Material</label>
+              <select>
+                <option selected>Concrete (smooth)</option>
+                <option>Brick</option>
+                <option>Wood</option>
+                <option>Steel</option>
+                <option>Glass</option>
+                <option>Acoustic foam</option>
+                <option>Fabric / curtain</option>
+                <option>Custom…</option>
+              </select>
+            </div>
+            <div class="field-row"><label>Absorption</label>
+              <div class="slider"><input type="range" min="0" max="100" value="2"><output>0.02</output></div>
+            </div>
+            <div class="field-row"><label>Scattering</label>
+              <div class="slider"><input type="range" min="0" max="100" value="10"><output>0.10</output></div>
+            </div>
+            <p class="hint">Scattering 0 = mirror-like bounce, 1 = fully diffuse.</p>
+          </details>
+        </div>
+
+        <!-- Interference source -->
+        <div class="inspector" data-kind="source" hidden>
+          <div class="inspector-head">
+            <span class="dot dot-source"></span>
+            <input class="name-input" value="Neighbour sensor">
+            <button class="btn btn-icon btn-danger" title="Delete">
+              <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" /></svg>
+            </button>
+          </div>
+
+          <details class="group" open>
+            <summary>Transform</summary>
+            <div class="field-row"><label>Position</label>
+              <div class="vec3">
+                <span class="axis x">X</span><input type="number" value="-1.00" step="0.05">
+                <span class="axis y">Y</span><input type="number" value="1.20" step="0.05">
+                <span class="axis z">Z</span><input type="number" value="3.00" step="0.05">
+              </div>
+            </div>
+            <div class="field-row"><label>Aim</label>
+              <div class="vec2">
+                <span class="axis">Yaw</span><input type="number" value="-60" step="1"><span class="unit">°</span>
+                <span class="axis">Pitch</span><input type="number" value="0" step="1"><span class="unit">°</span>
+              </div>
+            </div>
+          </details>
+
+          <details class="group" open>
+            <summary>Emission</summary>
+            <div class="field-row"><label>Type</label>
+              <select>
+                <option selected>Other ultrasonic sensor</option>
+                <option>Broadband hiss (air leak)</option>
+                <option>Continuous tone</option>
+              </select>
+            </div>
+            <div class="field-row"><label>Frequency</label>
+              <div class="num-unit"><input type="number" value="57" step="0.5"><span class="unit">kHz</span></div>
+            </div>
+            <div class="field-row"><label>Level</label>
+              <div class="slider"><input type="range" min="60" max="130" value="112"><output>112 dB SPL</output></div>
+            </div>
+            <div class="field-row"><label>Directivity</label>
+              <div class="slider"><input type="range" min="5" max="180" value="20"><output>20°</output></div>
+            </div>
+            <div class="field-row"><label>Mode</label>
+              <div class="segmented" role="radiogroup">
+                <button class="is-active">Pulsed</button><button>Continuous</button>
+              </div>
+            </div>
+            <div class="field-row"><label>Period</label>
+              <div class="num-unit"><input type="number" value="55" step="1"><span class="unit">ms</span></div>
+            </div>
+            <div class="field-row"><label>Start offset</label>
+              <div class="num-unit"><input type="number" value="3.0" step="0.5"><span class="unit">ms</span></div>
+            </div>
+          </details>
+
+          <div class="callout">
+            <b>In band:</b> 57 kHz lies within Sensor A's 58 ± 2 kHz passband. This source can trigger false echoes.
+          </div>
+        </div>
+      </div>
+
+      <!-- Environment tab -->
+      <div class="tab-page" data-page="env" hidden>
+        <details class="group" open>
+          <summary>Air</summary>
+          <div class="field-row"><label>Temperature</label>
+            <div class="slider"><input type="range" min="-20" max="50" value="20"><output>20 °C</output></div>
+          </div>
+          <div class="field-row"><label>Humidity</label>
+            <div class="slider"><input type="range" min="0" max="100" value="50"><output>50 %</output></div>
+          </div>
+          <div class="field-row"><label>Pressure</label>
+            <div class="num-unit"><input type="number" value="101.3" step="0.1"><span class="unit">kPa</span></div>
+          </div>
+        </details>
+        <details class="group" open>
+          <summary>Derived</summary>
+          <dl class="readout-list">
+            <div><dt>Speed of sound</dt><dd class="mono">343.4 m/s</dd></div>
+            <div><dt>Wavelength @ 58 kHz</dt><dd class="mono">5.92 mm</dd></div>
+            <div><dt>Air absorption</dt><dd class="mono">1.9 dB/m</dd></div>
+          </dl>
+        </details>
+        <details class="group" open>
+          <summary>Room</summary>
+          <label class="check"><input type="checkbox" checked> Floor is reflective</label>
+          <label class="check"><input type="checkbox"> Enclose in room box</label>
+          <div class="field-row"><label>Room size</label>
+            <div class="vec3">
+              <span class="axis">W</span><input type="number" value="10" step="0.5">
+              <span class="axis">H</span><input type="number" value="3" step="0.5">
+              <span class="axis">D</span><input type="number" value="10" step="0.5">
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Simulation tab -->
+      <div class="tab-page" data-page="sim" hidden>
+        <details class="group" open>
+          <summary>Ray tracing</summary>
+          <div class="field-row"><label>Rays per ping</label>
+            <select>
+              <option>2 000</option>
+              <option selected>10 000</option>
+              <option>50 000</option>
+              <option>200 000</option>
+            </select>
+          </div>
+          <div class="field-row"><label>Max bounces</label>
+            <div class="slider"><input type="range" min="1" max="20" value="6"><output>6</output></div>
+          </div>
+          <div class="field-row"><label>Energy cutoff</label>
+            <div class="slider"><input type="range" min="-120" max="-40" value="-90"><output>−90 dB</output></div>
+          </div>
+          <div class="field-row"><label>Receiver radius</label>
+            <div class="num-unit"><input type="number" value="0.05" step="0.01"><span class="unit">m</span></div>
+          </div>
+        </details>
+        <details class="group" open>
+          <summary>Visualization</summary>
+          <div class="field-row"><label>Particles shown</label>
+            <select>
+              <option>1 000</option>
+              <option selected>5 000</option>
+              <option>20 000</option>
+            </select>
+          </div>
+          <div class="field-row"><label>Colour by</label>
+            <div class="segmented" role="radiogroup">
+              <button class="is-active">Intensity</button><button>Bounce #</button><button>Source</button>
+            </div>
+          </div>
+        </details>
+      </div>
+    </aside>
+
+    <!-- ───────────── Bottom: echo analysis ───────────── -->
+    <section class="dock" aria-label="Echo analysis">
+      <div class="dock-head">
+        <div class="tabs tabs-small" role="tablist">
+          <button class="tab is-active" role="tab">Echo (A-scan)</button>
+          <button class="tab" role="tab">Ray log</button>
+          <button class="tab" role="tab">Distance history</button>
+        </div>
+        <div class="dock-legend">
+          <span><i class="sw sw-echo"></i>Echo</span>
+          <span><i class="sw sw-interf"></i>Interference</span>
+          <span><i class="sw sw-thresh"></i>Threshold</span>
+        </div>
+      </div>
+
+      <div class="dock-body">
+        <div class="chart-wrap">
+          <canvas id="echo-chart"></canvas>
+        </div>
+
+        <div class="readouts">
+          <div class="readout">
+            <span class="readout-label">True distance</span>
+            <span class="readout-value mono">4.87 <small>m</small></span>
+          </div>
+          <div class="readout">
+            <span class="readout-label">Measured</span>
+            <span class="readout-value mono is-warn">1.94 <small>m</small></span>
+          </div>
+          <div class="readout">
+            <span class="readout-label">Error</span>
+            <span class="readout-value mono is-bad">−2.93 <small>m</small></span>
+          </div>
+          <div class="readout readout-status">
+            <span class="status-pill status-bad">False echo</span>
+            <span class="muted small">Triggered by <b>Neighbour sensor</b> at 11.3 ms</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="timeline">
+        <span class="mono small">0 ms</span>
+        <input type="range" min="0" max="40" step="0.01" value="14.62" aria-label="Time">
+        <span class="mono small">40 ms</span>
+      </div>
+    </section>
+
+    <!-- ───────────── Status bar ───────────── -->
+    <footer class="statusbar">
+      <span>Rays 10 000</span>
+      <span>Bounces ≤ 6</span>
+      <span>c = 343.4 m/s</span>
+      <span>λ = 5.92 mm</span>
+      <span class="grow"></span>
+      <span class="muted">Drag to orbit · scroll to zoom · right-drag to pan</span>
+    </footer>
+  </div>
+
+  <!-- @inline-js -->
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "soundwave-bounce",
+  "version": "0.1.0",
+  "private": true,
+  "description": "3D ultrasonic sensor reflection simulator in a single HTML file",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  }
+}

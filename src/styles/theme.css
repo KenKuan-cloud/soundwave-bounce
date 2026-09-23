@@ -1,0 +1,48 @@
+/* Design tokens. Dark is the default for a 3D tool; light is opt-in via data-theme. */
+:root {
+  --bg: #0e1116;
+  --panel: #151a21;
+  --panel-2: #1b212a;
+  --field: #0f1318;
+  --border: #262e39;
+  --border-strong: #354050;
+  --text: #dbe2ea;
+  --text-muted: #8391a2;
+  --text-faint: #5b6776;
+
+  --accent: #3fb6ff;        /* sensor / primary */
+  --accent-weak: rgba(63, 182, 255, 0.14);
+  --source: #ff9f43;        /* interference sources */
+  --object: #9aa8b8;        /* passive geometry */
+  --good: #3ecf8e;
+  --warn: #f5c451;
+  --bad: #ff5d6c;
+
+  --axis-x: #ff6b6b;
+  --axis-y: #6bd66b;
+  --axis-z: #5aa9ff;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel-2: #f5f7fa;
+  --field: #ffffff;
+  --border: #dde3ea;
+  --border-strong: #c5ced9;
+  --text: #1a222c;
+  --text-muted: #5b6776;
+  --text-faint: #8a96a5;
+  --accent: #0a84d6;
+  --accent-weak: rgba(10, 132, 214, 0.12);
+  --source: #e07b12;
+  --object: #6b7888;
+  color-scheme: light;
+}

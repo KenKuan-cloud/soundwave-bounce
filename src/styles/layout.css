@@ -1,0 +1,115 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr) 312px;
+  grid-template-rows: 48px minmax(0, 1fr) 248px 26px;
+  grid-template-areas:
+    "top    top    top"
+    "left   view   right"
+    "left   dock   right"
+    "status status status";
+}
+
+.topbar     { grid-area: top; }
+.panel-left { grid-area: left; }
+.viewport-wrap { grid-area: view; }
+.panel-right { grid-area: right; }
+.dock       { grid-area: dock; }
+.statusbar  { grid-area: status; }
+
+/* Top bar */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 8px; margin-right: 8px; }
+.brand-mark {
+  width: 22px; height: 22px;
+  fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round;
+}
+.brand-name { font-weight: 600; letter-spacing: 0.2px; }
+.toolbar-group { display: flex; align-items: center; gap: 4px; }
+.toolbar-group.transport { margin: 0 auto; gap: 6px; }
+
+/* Side panels */
+.panel {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.panel-left { border-right: 1px solid var(--border); }
+.panel-right { border-left: 1px solid var(--border); }
+.panel-section { padding: 12px; border-bottom: 1px solid var(--border); }
+.panel-grow { flex: 1; min-height: 120px; overflow: auto; }
+
+/* Viewport */
+.viewport-wrap { position: relative; min-height: 0; overflow: hidden; }
+.viewport { position: absolute; inset: 0; }
+.viewport canvas { display: block; }
+
+/* Bottom dock */
+.dock {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+.dock-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+}
+.chart-wrap { position: relative; min-height: 0; }
+.chart-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* Status bar */
+.statusbar {
+  display: flex; align-items: center; gap: 18px;
+  padding: 0 12px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: var(--panel-2);
+  border-top: 1px solid var(--border);
+}
+.statusbar .grow { flex: 1; }
+
+/* Narrow screens: stack everything, viewport gets a fixed share. */
+@media (max-width: 960px) {
+  .app {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 60vh auto auto auto auto;
+    grid-template-areas: "top" "view" "dock" "right" "left" "status";
+  }
+  .topbar { flex-wrap: wrap; padding: 8px 16px; gap: 8px; }
+  .toolbar-group.transport { margin: 0; flex-wrap: wrap; }
+  .panel-left, .panel-right { border: 0; border-top: 1px solid var(--border); overflow: visible; }
+  .dock { min-height: 300px; }
+  .dock-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: 180px auto; }
+  .statusbar { flex-wrap: wrap; height: auto; padding: 6px 16px; gap: 8px 14px; }
+  .statusbar .grow, .statusbar .muted { display: none; }
+}
