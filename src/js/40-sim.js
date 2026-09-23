@@ -3,6 +3,37 @@
 // playback clock, and fills the readouts, ray log and status bar.
 // ─────────────────────────────────────────────────────────────
 
+// Turn a trace result into what the readouts say.
+function classify(result, sensor) {
+  const truth = result.trueDistance;
+  const det = result.detection;
+  const out = { truth, measured: null, error: null, measuredCls: '', errorCls: '' };
+  if (!det) {
+    return { ...out, status: 'No echo', pill: 'status-bad', msg: `Nothing crossed ${sensor.threshold} dB SPL within ${fmt(sensor.maxRange, 1)} m.` };
+  }
+  out.measured = det.distance;
+  const source = det.label || 'an unknown path';
+  if (det.interference) {
+    return {
+      ...out, error: truth == null ? null : det.distance - truth, measuredCls: 'is-bad', errorCls: 'is-bad',
+      status: 'False echo', pill: 'status-bad', msg: `Triggered by ${source} at ${fmt(det.tMs, 2)} ms. That's not a real echo.`,
+    };
+  }
+  if (truth == null) {
+    return { ...out, measuredCls: 'is-warn', status: 'Echo, nothing ahead', pill: 'status-warn', msg: `Echo from ${source}.` };
+  }
+  const err = det.distance - truth;
+  const ok = Math.abs(err) <= Math.max(0.05, 0.03 * truth); // leading-edge detection reads a little short
+  let msg;
+  if (ok) msg = `Echo from ${source}.`;
+  else if (det.label === result.trueTarget) msg = `Echo from ${source}, but from a point off the beam axis that faces the sensor.`;
+  else msg = `First echo came from ${source}.`;
+  return {
+    ...out, error: err, measuredCls: ok ? 'is-good' : 'is-warn', errorCls: ok ? '' : 'is-bad',
+    status: ok ? 'OK' : 'Off target', pill: ok ? 'status-good' : 'status-warn', msg,
+  };
+}
+
 function createSim({ viewport, echoChart, historyChart }) {
   const $ = (sel) => document.querySelector(sel);
   let result = null;
@@ -38,6 +69,7 @@ function createSim({ viewport, echoChart, historyChart }) {
     updateReadouts();
     updateLog();
     updateStatus();
+    scheduleSensors();
   }
 
   // Re-trace soon after a change, but not more often than the trace allows,
@@ -131,48 +163,80 @@ function createSim({ viewport, echoChart, historyChart }) {
       msg.textContent = 'Add a sensor from the left panel.';
       return;
     }
-    const truth = result.trueDistance;
-    const det = result.detection;
-    setReadout('#ro-true', truth == null ? null : fmt(truth, 2));
-    $('#ro-true').title = truth == null ? 'Nothing straight ahead' : `Straight ahead: ${result.trueTarget}`;
-
-    if (!det) {
-      setReadout('#ro-measured', null);
-      setReadout('#ro-error', null);
-      status.textContent = 'No echo';
-      status.className = 'status-pill status-bad';
-      msg.textContent = `Nothing crossed ${s.threshold} dB SPL within ${fmt(s.maxRange, 1)} m.`;
-      return;
-    }
-
-    const measured = det.distance;
-    const source = det.label ? det.label : 'an unknown path';
-    if (det.interference) {
-      setReadout('#ro-measured', fmt(measured, 2), 'is-bad');
-      setReadout('#ro-error', truth == null ? null : (measured > truth ? '+' : '') + fmt(measured - truth, 2), 'is-bad');
-      status.textContent = 'False echo';
-      status.className = 'status-pill status-bad';
-      msg.textContent = `Triggered by ${source} at ${fmt(det.tMs, 2)} ms. That's not a real echo.`;
-      return;
-    }
-    if (truth == null) {
-      setReadout('#ro-measured', fmt(measured, 2), 'is-warn');
-      setReadout('#ro-error', null);
-      status.textContent = 'Echo, nothing ahead';
-      status.className = 'status-pill status-warn';
-      msg.textContent = `Echo from ${source}.`;
-      return;
-    }
-    const err = measured - truth;
-    const ok = Math.abs(err) <= Math.max(0.03, 0.02 * truth);
-    setReadout('#ro-measured', fmt(measured, 2), ok ? 'is-good' : 'is-warn');
-    setReadout('#ro-error', (err > 0 ? '+' : '') + fmt(err, 2), ok ? '' : 'is-bad');
-    status.textContent = ok ? 'OK' : 'Off target';
-    status.className = `status-pill ${ok ? 'status-good' : 'status-warn'}`;
-    if (ok) msg.textContent = `Echo from ${source}.`;
-    else if (det.label === result.trueTarget) msg.textContent = `Echo from ${source}, but from a point off the beam axis that faces the sensor.`;
-    else msg.textContent = `First echo came from ${source}.`;
+    const k = classify(result, s);
+    setReadout('#ro-true', k.truth == null ? null : fmt(k.truth, 2));
+    $('#ro-true').title = k.truth == null ? 'Nothing straight ahead' : `Straight ahead: ${result.trueTarget}`;
+    setReadout('#ro-measured', k.measured == null ? null : fmt(k.measured, 2), k.measuredCls);
+    setReadout('#ro-error', k.error == null ? null : (k.error > 0 ? '+' : '') + fmt(k.error, 2), k.errorCls);
+    status.textContent = k.status;
+    status.className = `status-pill ${k.pill}`;
+    msg.textContent = k.msg;
   }
+
+  // ── Compare sensors ──
+  let sensorsVisible = false;
+  let sensorsTimer = null;
+  function scheduleSensors() {
+    if (!sensorsVisible) return;
+    clearTimeout(sensorsTimer);
+    sensorsTimer = setTimeout(updateSensors, 120);
+  }
+  bus.on('pane', (name) => { sensorsVisible = name === 'sensors'; scheduleSensors(); });
+
+  function updateSensors() {
+    const body = $('#sensors-body');
+    const sensors = store.items.filter((i) => i.type === 'sensor');
+    body.replaceChildren();
+    if (!sensors.length) {
+      const td = body.insertRow().insertCell();
+      td.colSpan = 7;
+      td.className = 'muted';
+      td.textContent = 'No sensors in the scene.';
+      return;
+    }
+    // Other sensors are traced with fewer rays and no slice to stay quick.
+    const st = store.state;
+    const lite = { ...st, sim: { ...st.sim, rays: Math.min(st.sim.rays, 10000), particles: 1 }, display: { ...st.display, slice: false } };
+    for (const s of sensors) {
+      const tr = body.insertRow();
+      tr.dataset.id = s.id;
+      tr.className = s.id === store.activeSensor()?.id ? 'is-detected' : '';
+      const nameCell = tr.insertCell();
+      nameCell.textContent = s.name;
+      if (!s.visible) {
+        const td = tr.insertCell();
+        td.colSpan = 6;
+        td.className = 'muted';
+        td.textContent = 'Hidden (not simulated)';
+        continue;
+      }
+      const r = result && result.sensorId === s.id ? result : composePing(traceSensor(lite, s), pingIndex);
+      const k = classify(r, s);
+      const cells = [
+        [`${fmt(s.freq, s.freq % 1 ? 1 : 0)} kHz`, 'mono'],
+        [k.truth == null ? '—' : `${fmt(k.truth, 2)} m`, 'mono'],
+        [k.measured == null ? '—' : `${fmt(k.measured, 2)} m`, `mono ${k.measuredCls || ''}`],
+        [k.error == null ? '—' : `${k.error > 0 ? '+' : ''}${fmt(k.error, 2)} m`, `mono ${k.errorCls || ''}`],
+      ];
+      for (const [text, cls] of cells) {
+        const td = tr.insertCell();
+        td.textContent = text;
+        td.className = cls;
+      }
+      const statusCell = tr.insertCell();
+      const pill = document.createElement('span');
+      pill.className = `status-pill ${k.pill}`;
+      pill.textContent = k.status;
+      statusCell.appendChild(pill);
+      const why = tr.insertCell();
+      why.className = 'path';
+      why.textContent = k.msg;
+    }
+  }
+  $('#sensors-body').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) bus.emit('pick', tr.dataset.id);
+  });
 
   // ── Ray log ──
   function updateLog() {
@@ -240,8 +304,32 @@ function createSim({ viewport, echoChart, historyChart }) {
       : '—';
   }
 
+  function csvEscape(v) {
+    const t = String(v);
+    return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  }
+
   return {
     retrace,
+    get result() { return result; },
+    echoCsv() {
+      if (!result) return null;
+      const rows = [['time_ms', 'reads_as_m', 'own_echo_db_spl', 'interference_db_spl', 'total_db_spl', 'threshold_db_spl']];
+      for (let b = 0; b < result.nBins; b++) {
+        const t = b * result.dtMs;
+        const i = result.interfDb[b];
+        rows.push([t.toFixed(3), (C_ASSUMED * t / 2000).toFixed(4), result.echoDb[b].toFixed(2),
+          Number.isFinite(i) ? i.toFixed(2) : '', result.totalDb[b].toFixed(2), result.threshold]);
+      }
+      return rows.map((r) => r.join(',')).join('\n');
+    },
+    logCsv() {
+      const rows = [['arrival', 'reads_as', 'level', 'path']];
+      for (const tr of document.querySelectorAll('#ray-log-body tr')) {
+        rows.push([...tr.cells].map((c) => csvEscape(c.textContent)));
+      }
+      return rows.map((r) => r.join(',')).join('\n');
+    },
     togglePlay() {
       if (!result) return;
       if (!playing && t >= result.tMax) setTime(0);

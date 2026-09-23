@@ -261,6 +261,70 @@ function convolve(power, { k, half }) {
   return out;
 }
 
+// ── Intensity slice ──
+// A plane (centre p0, in-plane axes u, v, normal n) with a grid of square
+// cells. Rays deposit power × path length inside a thin slab around the
+// plane; dividing by the cell volume gives intensity. Works for any plane,
+// including one the rays travel along.
+function makeField({ p0, u, v, n, halfU, halfV, cell = 0.05, thick = 0.1 }) {
+  const nu = Math.max(1, Math.round(2 * halfU / cell));
+  const nv = Math.max(1, Math.round(2 * halfV / cell));
+  return { p0, u, v, n, halfU, halfV, cell, thick, nu, nv, sum: new Float64Array(nu * nv) };
+}
+
+function depositSegment(field, o, d, segLen, L, E, alphaNp, scale) {
+  const { p0, n, u, v, thick, cell, nu, nv, halfU, halfV } = field;
+  const a = (o[0] - p0[0]) * n[0] + (o[1] - p0[1]) * n[1] + (o[2] - p0[2]) * n[2];
+  const b = dot3(d, n);
+  const h = thick / 2;
+  let s0, s1;
+  if (Math.abs(b) < 1e-9) {
+    if (Math.abs(a) > h) return;
+    s0 = 0; s1 = segLen;
+  } else {
+    s0 = (-h - a) / b; s1 = (h - a) / b;
+    if (s0 > s1) [s0, s1] = [s1, s0];
+    s0 = Math.max(0, s0); s1 = Math.min(segLen, s1);
+    if (s1 <= s0) return;
+  }
+  const steps = Math.min(600, Math.ceil((s1 - s0) / (cell / 2)));
+  const ds = (s1 - s0) / steps;
+  const ou = (o[0] - p0[0]) * u[0] + (o[1] - p0[1]) * u[1] + (o[2] - p0[2]) * u[2];
+  const ov = (o[0] - p0[0]) * v[0] + (o[1] - p0[1]) * v[1] + (o[2] - p0[2]) * v[2];
+  const du = dot3(d, u), dv = dot3(d, v);
+  for (let k = 0; k < steps; k++) {
+    const s = s0 + (k + 0.5) * ds;
+    const i = Math.floor((ou + du * s + halfU) / cell);
+    const j = Math.floor((ov + dv * s + halfV) / cell);
+    if (i < 0 || j < 0 || i >= nu || j >= nv) continue;
+    field.sum[j * nu + i] += scale * E * Math.exp(-alphaNp * (L + s)) * ds;
+  }
+}
+
+// Field sums → dB (re. the active sensor's Tx at 1 m), lightly smoothed.
+function finishField(field) {
+  const { nu, nv, sum, cell, thick } = field;
+  const vol = cell * cell * thick;
+  const db = new Float32Array(nu * nv);
+  for (let j = 0; j < nv; j++) {
+    for (let i = 0; i < nu; i++) {
+      let acc = 0, w = 0;
+      for (let dj = -1; dj <= 1; dj++) {
+        for (let di = -1; di <= 1; di++) {
+          const x = i + di, y = j + dj;
+          if (x < 0 || y < 0 || x >= nu || y >= nv) continue;
+          const wt = di === 0 && dj === 0 ? 4 : di === 0 || dj === 0 ? 2 : 1;
+          acc += sum[y * nu + x] * wt;
+          w += wt;
+        }
+      }
+      const I = acc / w / vol;
+      db[j * nu + i] = I > 0 ? 10 * Math.log10(I) : -Infinity;
+    }
+  }
+  return { nu, nv, db, p0: field.p0, u: field.u, v: field.v, n: field.n, halfU: field.halfU, halfV: field.halfV };
+}
+
 // ── Emitter → receiver trace ──
 // Arrival powers are relative to the emitter's on-axis intensity at 1 m.
 // `monostatic`: emitter and receiver are the same transducer (own echoes).
@@ -370,6 +434,7 @@ function traceEmitter(cfg) {
       const prim = hit ? hit.prim : null;
       const nHit = hit ? [hit.n[0], hit.n[1], hit.n[2]] : null;
       const curvature = hit ? hit.curvature : 0;
+      if (cfg.field) depositSegment(cfg.field, o, d, segLen, L, E, alphaNp, cfg.fieldScale || 1);
 
       // Specular sound passing the receiver on this segment?
       // (The direct, unreflected path is computed exactly below.)
@@ -540,6 +605,32 @@ function traceEmitter(cfg) {
   return { power, binTopI, binTopLabel, groups, top, viz, rays: N, nBins };
 }
 
+// Where the intensity slice goes: parallel to the floor at a height, or
+// upright along the sensor's beam.
+function slicePlane(state, sensor) {
+  const { room } = state.env;
+  const d = state.display;
+  if (d.sliceMode === 'vertical') {
+    const f = aimVector(sensor.yaw, sensor.pitch);
+    let fh = [f[0], 0, f[2]];
+    const l = Math.hypot(fh[0], fh[2]);
+    fh = l > 1e-3 ? [fh[0] / l, 0, fh[2] / l] : [1, 0, 0];
+    const n = [fh[2], 0, -fh[0]]; // horizontal, perpendicular to the beam
+    const height = room.enclosed ? room.h : Math.max(3, sensor.pos.y + 1);
+    const along = sensor.maxRange + 1;
+    return {
+      p0: [sensor.pos.x + fh[0] * (along / 2 - 0.5), height / 2, sensor.pos.z + fh[2] * (along / 2 - 0.5)],
+      u: fh, v: [0, 1, 0], n,
+      halfU: along / 2, halfV: height / 2,
+    };
+  }
+  return {
+    p0: [0, clamp(d.sliceHeight, 0.02, 50), 0],
+    u: [1, 0, 0], v: [0, 0, -1], n: [0, 1, 0],
+    halfU: room.w / 2, halfV: room.d / 2,
+  };
+}
+
 // ── Sensor trace: own echoes + everything that can interfere ──
 function traceSensor(state, sensor, prims = buildPrimitives(state)) {
   const started = (typeof performance !== 'undefined' ? performance : Date).now();
@@ -555,11 +646,13 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
   const fwd = aimVector(sensor.yaw, sensor.pitch);
   const rx = [sensor.pos.x, sensor.pos.y, sensor.pos.z];
 
+  const field = state.display?.slice ? makeField(slicePlane(state, sensor)) : null;
   const own = traceEmitter({
     prims, sim, c, alphaDb, tMax, dtMs,
     txPos: rx, txFwd: fwd, txBeam: sensorBeam,
     rxPos: rx, rxFwd: fwd, rxBeam: sensorBeam,
     monostatic: true, rays: sim.rays, vizCount: sim.particles,
+    field,
   });
   const tx = sensor.txLevel;
 
@@ -598,6 +691,8 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
         txBeam: makeBeam(isSensor ? it.halfAngle : it.directivity),
         rxPos: rx, rxFwd: fwd, rxBeam: sensorBeam,
         monostatic: false,
+        field: state.display?.sliceAll ? field : null,
+        fieldScale: Math.pow(10, (info.levelDb - sensor.txLevel) / 10),
         rays: Math.min(sim.rays, 10000),
         vizCount: Math.min(sim.particles, continuous ? 600 : 2000),
         seed: 7919 * (idx + 2),
@@ -642,6 +737,7 @@ function traceSensor(state, sensor, prims = buildPrimitives(state)) {
     top: own.top,
     viz: own.viz,
     rays: own.rays,
+    field: field ? finishField(field) : null,
   };
   composePing(result, 0);
   result.traceMs = (typeof performance !== 'undefined' ? performance : Date).now() - started;

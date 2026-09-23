@@ -16,7 +16,10 @@ function defaultSim() {
 }
 
 function defaultDisplay() {
-  return { particles: true, cone: true, allRays: false, rxRays: true, grid: true, labels: true };
+  return {
+    particles: true, cone: true, allRays: false, rxRays: true, grid: true, labels: true,
+    slice: false, sliceMode: 'vertical', sliceHeight: 1, sliceAll: false,
+  };
 }
 
 const v3 = (x, y, z) => ({ x, y, z });
@@ -131,6 +134,52 @@ const PRESETS = {
       withMaterial('wall', 'concrete', { name: 'Wall', pos: { x: 2.5, y: 1, z: 0 } }),
     ],
   },
+  corridor: {
+    label: 'Corridor, sensor at an angle',
+    items: () => [
+      makeItem('sensor', { name: 'Sensor A', pos: { x: -3.5, y: 1, z: 0.4 }, yaw: -25 }),
+      withMaterial('wall', 'concrete', { name: 'Left wall', pos: { x: 0, y: 1, z: -1 }, rot: { y: 90 }, size: { x: 0.1, y: 2, z: 8 } }),
+      withMaterial('wall', 'concrete', { name: 'Right wall', pos: { x: 0, y: 1, z: 1 }, rot: { y: 90 }, size: { x: 0.1, y: 2, z: 8 } }),
+      withMaterial('wall', 'wood', { name: 'Door at the end', pos: { x: 2, y: 1, z: 0 }, size: { x: 0.08, y: 2, z: 1.9 } }),
+    ],
+  },
+  pipeRack: {
+    label: 'Pipe rack (thin vs thick)',
+    items: () => [
+      makeItem('sensor', { name: 'Sensor A', pos: { x: -2.5, y: 1, z: 0 } }),
+      withMaterial('pipe', 'steel', { name: 'Pipe Ø20 mm', pos: { x: -0.5, y: 1.2, z: 0.15 }, radius: 0.01 }),
+      withMaterial('pipe', 'steel', { name: 'Pipe Ø60 mm', pos: { x: 0.5, y: 1.2, z: -0.1 }, radius: 0.03 }),
+      withMaterial('pipe', 'steel', { name: 'Pipe Ø200 mm', pos: { x: 1.6, y: 1.2, z: 0.05 }, radius: 0.1 }),
+    ],
+  },
+  tank: {
+    label: 'Tank level (looking down)',
+    items: () => [
+      makeItem('sensor', { name: 'Level sensor', pos: { x: 0, y: 2.8, z: 0 }, pitch: -90, maxRange: 4 }),
+      withMaterial('block', 'water', { name: 'Liquid', pos: { x: 0, y: 0.5, z: 0 }, size: { x: 1.4, y: 1, z: 1.4 } }),
+      withMaterial('wall', 'steel', { name: 'Tank wall 1', pos: { x: 0.75, y: 1.5, z: 0 }, size: { x: 0.04, y: 3, z: 1.54 } }),
+      withMaterial('wall', 'steel', { name: 'Tank wall 2', pos: { x: -0.75, y: 1.5, z: 0 }, size: { x: 0.04, y: 3, z: 1.54 } }),
+      withMaterial('wall', 'steel', { name: 'Tank wall 3', pos: { x: 0, y: 1.5, z: 0.75 }, rot: { y: 90 }, size: { x: 0.04, y: 3, z: 1.46 } }),
+      withMaterial('wall', 'steel', { name: 'Tank wall 4', pos: { x: 0, y: 1.5, z: -0.75 }, rot: { y: 90 }, size: { x: 0.04, y: 3, z: 1.46 } }),
+    ],
+  },
+  parking: {
+    label: 'Parking: pole and kerb',
+    items: () => [
+      makeItem('sensor', { name: 'Bumper sensor', pos: { x: -1.5, y: 0.5, z: 0 }, pitch: 5, model: 'maxbotix', freq: 42, bw: 3, halfAngle: 30, maxRange: 3 }),
+      withMaterial('pipe', 'steel', { name: 'Pole', pos: { x: 0.3, y: 0.6, z: 0.35 }, radius: 0.04, length: 1.2 }),
+      withMaterial('block', 'concrete', { name: 'Kerb', pos: { x: 1.2, y: 0.07, z: 0 }, size: { x: 0.15, y: 0.14, z: 3 } }),
+    ],
+  },
+  room: {
+    label: 'Enclosed room (reverberation)',
+    env: { room: { enclosed: true, w: 6, h: 3, d: 5 } },
+    items: () => [
+      makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1.2, z: 0.5 }, yaw: 10 }),
+      withMaterial('block', 'wood', { name: 'Cabinet', pos: { x: 1.2, y: 0.5, z: -1.2 }, size: { x: 0.6, y: 1, z: 1 } }),
+      withMaterial('block', 'fabric', { name: 'Sofa', pos: { x: 0.6, y: 0.4, z: 1.5 }, size: { x: 2, y: 0.8, z: 0.9 } }),
+    ],
+  },
   empty: {
     label: 'Empty',
     items: () => [makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0 } })],
@@ -178,7 +227,7 @@ const store = {
   loadPreset(key) {
     const p = PRESETS[key] || PRESETS.demo;
     // Keep the user's simulation and display settings across scenes.
-    this.load({ items: p.items(), sim: this.state?.sim, display: this.state?.display });
+    this.load({ items: p.items(), env: p.env ? deepClone(p.env) : undefined, sim: this.state?.sim, display: this.state?.display });
   },
 
   serialize() {

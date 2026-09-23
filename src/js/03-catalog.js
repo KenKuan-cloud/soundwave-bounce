@@ -7,6 +7,7 @@ const MATERIALS = {
   wood:     { label: 'Wood',              absorption: 0.06, scattering: 0.1,  color: 0xa57a4f },
   steel:    { label: 'Steel',             absorption: 0.01, scattering: 0.02, color: 0xaab4bf, metal: true },
   glass:    { label: 'Glass',             absorption: 0.01, scattering: 0.01, color: 0x9fd4e8, glass: true },
+  water:    { label: 'Water (still)',     absorption: 0.001, scattering: 0,   color: 0x2f7fb8, glass: true },
   foam:     { label: 'Acoustic foam',     absorption: 0.85, scattering: 0.7,  color: 0x3d4350 },
   fabric:   { label: 'Fabric / curtain',  absorption: 0.55, scattering: 0.6,  color: 0x6d5a8c },
   custom:   { label: 'Custom',            absorption: null, scattering: null, color: 0x7f8fa0 },

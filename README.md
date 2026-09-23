@@ -16,7 +16,7 @@ file. It needs internet access the first time to load Three.js from a CDN.
 | 2 | Sensor + ray tracing: beam pattern, reflections, spreading, air absorption, detection | ✅ |
 | 3 | Visualisation: animated wavefront, timeline, echo (A-scan) chart, ray log, distance history | ✅ |
 | 4 | Interfering ultrasonic sources and other sensors: crosstalk, false echoes, band filter, ping timing | ✅ |
-| 5 | Polish (more presets, intensity slice plane, multi-sensor view) | ⏳ |
+| 5 | Intensity slice plane, compare sensors, undo/redo, export (PNG/CSV), more presets, fine zoom + zoom slider | ✅ |
 
 ## How the simulation works
 
@@ -44,7 +44,20 @@ pipes, so sound is traced like light (geometric acoustics):
   band edges; broadband hiss counts only the slice in band) and placed in time
   by when it fires relative to the sensor's ping. When the intervals differ,
   false echoes move from ping to ping. Turn on Loop to see it.
+- **Intensity slice:** rays deposit power × path length into a thin slab
+  around a plane (horizontal, or upright along the beam). Dividing by the cell
+  volume gives the intensity summed over the whole ping. Drawn on its own
+  40 dB colour scale from the plane's strongest spots.
 - **Not modelled:** diffraction and phase interference.
+
+## Using it
+
+- **Mouse:** drag to orbit, scroll to zoom (Shift + scroll for finer steps), right-drag to pan.
+  You can also use the zoom slider on the right edge of the 3D view. Press **H** or click **Reset view** if you get lost.
+- **Keys:** Space ping/pause · Q W E R select/move/rotate/resize · S snap ·
+  F focus · Del delete · Ctrl+D duplicate · Ctrl+Z / Ctrl+Y undo/redo · + / − zoom.
+- **Presets:** demo room, wall straight ahead, tilted wall, corner reflector, pipe,
+  foam vs concrete, crosstalk, corridor, pipe rack, tank level, parking, enclosed room.
 
 ## Development
 

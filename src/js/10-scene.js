@@ -13,6 +13,7 @@ const COLORS = {
 const INTENSITY_RAMP = ['#fff4b0', '#ffb44a', '#ff4d6d', '#8e3bd9', '#2a2f7a'].map((c) => new THREE.Color(c));
 const BOUNCE_COLORS = ['#3fb6ff', '#3ecf8e', '#f5c451', '#ff9f43', '#ff5d6c', '#b58cff', '#9aa8b8'].map((c) => new THREE.Color(c));
 const LEGEND_RANGE_DB = 90;
+const SLICE_RANGE_DB = 40;
 
 function intensityColor(t, out = new THREE.Color()) {
   // t: 0 = loudest, 1 = quietest
@@ -54,13 +55,35 @@ function createViewport(container) {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
-  // Gentler zoom with limits, so a fast scroll can't fly through the scene
-  // or shrink it to a dot.
-  controls.zoomSpeed = 0.45;
+  // Zoom limits, so zooming can't fly through the scene or shrink it to a dot.
   controls.minDistance = 0.4;
   controls.maxDistance = 25;
   controls.maxPolarAngle = Math.PI * 0.49;
+
+  // ── Zoom ──
+  // Mouse-wheel zoom is handled here instead of by OrbitControls: the step
+  // follows how far the wheel/trackpad moved, so it is fine-grained on both.
+  // Shift makes it 4× finer. Pinch-zoom on touch screens still uses OrbitControls.
+  const ZOOM_PER_PIXEL = 0.00015; // ≈1.5 % per mouse-wheel notch
+  const zoomListeners = [];
+  function getDistance() { return camera.position.distanceTo(controls.target); }
+  function setDistance(d) {
+    const off = camera.position.clone().sub(controls.target);
+    off.setLength(clamp(d, controls.minDistance, controls.maxDistance));
+    camera.position.copy(controls.target).add(off);
+    controls.update();
+  }
+  function zoomBy(factor) { setDistance(getDistance() * factor); }
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation(); // capture phase: OrbitControls never sees the wheel
+    const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    const k = e.shiftKey ? ZOOM_PER_PIXEL / 4 : ZOOM_PER_PIXEL;
+    zoomBy(Math.exp(clamp(px, -150, 150) * k));
+  }, { capture: true, passive: false });
+
   controls.addEventListener('change', () => {
+    for (const fn of zoomListeners) fn(getDistance());
     // Keep the orbit centre inside the room so panning can't lose the scene.
     const { room } = store.state.env;
     const t = controls.target;
@@ -487,8 +510,57 @@ function createViewport(container) {
     setLineGeometry(rxLines, pos, col);
   }
 
+  // ── Intensity slice (heat map) ──
+  const sliceMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false })
+  );
+  sliceMesh.visible = false;
+  sliceMesh.renderOrder = -1;
+  noRaycast(sliceMesh);
+  scene.add(sliceMesh);
+
+  function buildSlice(field) {
+    if (sliceMesh.material.map) { sliceMesh.material.map.dispose(); sliceMesh.material.map = null; }
+    sliceMesh.visible = !!field && store.state.display.slice;
+    if (!sliceMesh.visible) { bus.emit('slice', null); return; }
+    const { nu, nv, db } = field;
+    // Own colour scale: 0 = the plane's strongest spots (99th percentile, so a
+    // single hot cell next to the transducer doesn't set it), SLICE_RANGE_DB below.
+    const finite = [];
+    const step = Math.max(1, Math.floor(db.length / 20000));
+    for (let k = 0; k < db.length; k += step) if (Number.isFinite(db[k])) finite.push(db[k]);
+    finite.sort((a, b) => a - b);
+    const top = finite.length ? finite[Math.floor(finite.length * 0.99)] : 0;
+    const data = new Uint8Array(nu * nv * 4);
+    const c = new THREE.Color();
+    for (let k = 0; k < nu * nv; k++) {
+      const t = (top - db[k]) / SLICE_RANGE_DB;
+      if (!(t <= 1)) continue; // too weak (or nothing): transparent
+      const hex = intensityColor(t, c).getHex();
+      data[k * 4] = (hex >> 16) & 255;
+      data[k * 4 + 1] = (hex >> 8) & 255;
+      data[k * 4 + 2] = hex & 255;
+      data[k * 4 + 3] = Math.round(235 - 110 * clamp(t, 0, 1)); // weak areas more see-through
+    }
+    bus.emit('slice', { top, range: SLICE_RANGE_DB });
+    const tex = new THREE.DataTexture(data, nu, nv, THREE.RGBAFormat);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    sliceMesh.material.map = tex;
+    sliceMesh.material.needsUpdate = true;
+    const u = new THREE.Vector3(...field.u), v = new THREE.Vector3(...field.v);
+    const n = new THREE.Vector3().crossVectors(u, v);
+    sliceMesh.matrixAutoUpdate = false;
+    sliceMesh.matrix.makeBasis(u, v, n)
+      .scale(new THREE.Vector3(2 * field.halfU, 2 * field.halfV, 1))
+      .setPosition(new THREE.Vector3(...field.p0));
+  }
+
   function setResult(result) {
     vis.result = result;
+    buildSlice(result?.field);
     if (result) {
       vis.alphaDb = result.alphaDb;
       vis.c = result.c;
@@ -596,6 +668,15 @@ function createViewport(container) {
     select: updateGizmo,
     setTool, setSnap, setView,
     setResult, setTime, frameSelected,
+    zoomBy, getDistance, setDistance,
+    // PNG of the 3D view (rendered on demand; labels are HTML and not included).
+    screenshot() {
+      renderer.render(scene, camera);
+      return renderer.domElement.toDataURL('image/png');
+    },
+    get minDistance() { return controls.minDistance; },
+    get maxDistance() { return controls.maxDistance; },
+    onZoom(fn) { zoomListeners.push(fn); },
     refreshLines() { buildRayLines(); buildRxLines(); },
     get snap() { return snap; },
   };

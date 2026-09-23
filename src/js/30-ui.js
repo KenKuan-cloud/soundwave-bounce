@@ -100,6 +100,8 @@ function initUI({ viewport, sim }) {
 
   function selectItem(id) {
     store.select(id);
+    // Show the picked item's properties even if another tab is open.
+    if (id) $('.panel-right > .tabs .tab[data-tab="props"]')?.click();
     renderOutliner();
     showInspector();
     viewport.sync();
@@ -175,6 +177,7 @@ function initUI({ viewport, sim }) {
 
   function fillAll() {
     for (const s of $$('[data-scope]')) fillScope(s);
+    applyShowWhen($('#slice-settings'), store.state.display);
     updateDerived();
     updateSourceCallout();
   }
@@ -258,8 +261,12 @@ function initUI({ viewport, sim }) {
       if (path === 'colorBy' || path === 'vizRangeDb') viewport.refreshLines();
       else bus.emit('scene', { source: 'sim' });
     } else if (scope === 'display') {
+      fillAll();
+      applyShowWhen($('#slice-settings'), store.state.display);
       viewport.sync();
       viewport.refreshLines();
+      // The slice is computed by the tracer.
+      if (path.startsWith('slice')) bus.emit('scene', { source: 'slice' });
     }
   }
 
@@ -328,6 +335,8 @@ function initUI({ viewport, sim }) {
     tab.addEventListener('click', () => {
       $$('.dock .tab[data-pane]').forEach((t) => t.classList.toggle('is-active', t === tab));
       $$('.dock-pane').forEach((p) => { p.hidden = p.dataset.pane !== tab.dataset.pane; });
+      document.querySelector('.dock-body').classList.toggle('is-wide', tab.dataset.pane === 'sensors');
+      bus.emit('pane', tab.dataset.pane);
     });
   });
 
@@ -353,6 +362,24 @@ function initUI({ viewport, sim }) {
     if (!viewport.frameSelected()) toast('Select something to focus on');
   }
   $('#btn-reset-view').addEventListener('click', resetView);
+
+  // Zoom slider: logarithmic in camera distance, top = closest.
+  const zoomSlider = $('#zoom-slider');
+  const zoomToSlider = (d) => {
+    const lo = Math.log(viewport.minDistance), hi = Math.log(viewport.maxDistance);
+    return Math.round(1000 * (hi - Math.log(d)) / (hi - lo));
+  };
+  const sliderToZoom = (v) => {
+    const lo = Math.log(viewport.minDistance), hi = Math.log(viewport.maxDistance);
+    return Math.exp(hi - (v / 1000) * (hi - lo));
+  };
+  viewport.onZoom((d) => {
+    if (document.activeElement !== zoomSlider) zoomSlider.value = String(zoomToSlider(d));
+    $('#zoom-readout').textContent = `${fmt(d, d < 10 ? 1 : 0)} m`;
+  });
+  zoomSlider.addEventListener('input', () => viewport.setDistance(sliderToZoom(Number(zoomSlider.value))));
+  $('#btn-zoom-in').addEventListener('click', () => viewport.zoomBy(1 / 1.15));
+  $('#btn-zoom-out').addEventListener('click', () => viewport.zoomBy(1.15));
   $('#btn-focus').addEventListener('click', focusSelected);
   $$('.vp-views [data-view]').forEach((b) => {
     b.addEventListener('click', () => {
@@ -425,6 +452,7 @@ function initUI({ viewport, sim }) {
     sim.clearHistory();
     sim.reset();
     bus.emit('scene', { source: 'load' });
+    resetHistory();
     viewport.setView('persp');
   }
 
@@ -486,6 +514,107 @@ function initUI({ viewport, sim }) {
   });
   document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.menu-wrap')) setMenu(false); });
 
+  function download(name, href) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    if (href.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(href), 1000);
+  }
+  const blobUrl = (text, type) => URL.createObjectURL(new Blob([text], { type }));
+
+  // ── Export ──
+  const exportBtn = $('#btn-export');
+  const exportMenu = $('#export-menu');
+  function setExportMenu(open) {
+    exportMenu.hidden = !open;
+    exportBtn.setAttribute('aria-expanded', String(open));
+    if (open) exportMenu.querySelector('button')?.focus();
+  }
+  exportBtn.addEventListener('click', (e) => { e.stopPropagation(); setMenu(false); setExportMenu(exportMenu.hidden); });
+  exportMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-export]');
+    if (!b) return;
+    setExportMenu(false);
+    if (b.dataset.export === 'png') {
+      download('soundwave-view.png', viewport.screenshot());
+    } else if (b.dataset.export === 'echo') {
+      const csv = sim.echoCsv();
+      if (!csv) { toast('Add a sensor first'); return; }
+      download('soundwave-echo.csv', blobUrl(csv, 'text/csv'));
+    } else {
+      download('soundwave-ray-log.csv', blobUrl(sim.logCsv(), 'text/csv'));
+    }
+    toast('Exported');
+  });
+  document.addEventListener('click', (e) => { if (!exportMenu.hidden && !e.target.closest('.menu-wrap')) setExportMenu(false); });
+
+  // ── Undo / redo ──
+  // Snapshots of the scene (items + environment), taken once edits settle.
+  const undoStack = [];
+  const redoStack = [];
+  let snapTimer = null;
+  const snapshot = () => JSON.stringify({ items: store.state.items, env: store.state.env });
+  function resetHistory() {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    undoStack.push(snapshot());
+    updateUndoButtons();
+  }
+  function recordSoon() {
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {
+      const s = snapshot();
+      if (s === undoStack[undoStack.length - 1]) return;
+      undoStack.push(s);
+      if (undoStack.length > 100) undoStack.shift();
+      redoStack.length = 0;
+      updateUndoButtons();
+    }, 350);
+  }
+  function updateUndoButtons() {
+    $('#btn-undo').disabled = undoStack.length < 2;
+    $('#btn-redo').disabled = redoStack.length === 0;
+  }
+  function restore(snap) {
+    const data = JSON.parse(snap);
+    store.state.items = data.items;
+    store.state.env = data.env;
+    if (!store.get(store.selectedId)) store.selectedId = null;
+    if (!store.get(store.activeSensorId)) store.activeSensorId = store.activeSensor()?.id ?? null;
+    viewport.rebuild();
+    renderOutliner();
+    showInspector();
+    fillAll();
+    bus.emit('scene', { source: 'undo' });
+  }
+  function undo() {
+    clearTimeout(snapTimer);
+    // Capture edits that haven't been recorded yet, so they can be redone.
+    const now = snapshot();
+    if (now !== undoStack[undoStack.length - 1]) undoStack.push(now);
+    if (undoStack.length < 2) return;
+    redoStack.push(undoStack.pop());
+    restore(undoStack[undoStack.length - 1]);
+    updateUndoButtons();
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    const s = redoStack.pop();
+    undoStack.push(s);
+    restore(s);
+    updateUndoButtons();
+  }
+  $('#btn-undo').addEventListener('click', undo);
+  $('#btn-redo').addEventListener('click', redo);
+  bus.on('scene', (e) => {
+    const src = e?.source;
+    if (src === 'undo' || src === 'load' || src === 'gizmo' || src === 'sim' || src === 'slice') return;
+    recordSoon();
+  });
+
   // ── Transport ──
   $('#btn-play').addEventListener('click', () => sim.togglePlay());
   $('#btn-reset').addEventListener('click', () => sim.reset());
@@ -503,13 +632,22 @@ function initUI({ viewport, sim }) {
     if (e.target.matches('input, select, textarea') || help.open) return;
     const k = e.key.toLowerCase();
     if ((e.ctrlKey || e.metaKey) && k === 'd') { e.preventDefault(); duplicateSelected(); return; }
+    if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+    if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redo(); return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (k === 'escape') { if (!menu.hidden) setMenu(false); else selectItem(null); return; }
+    if (k === 'escape') {
+      if (!menu.hidden) setMenu(false);
+      else if (!exportMenu.hidden) setExportMenu(false);
+      else selectItem(null);
+      return;
+    }
     const tools = { q: 'select', w: 'move', e: 'rotate', r: 'scale' };
     if (tools[k]) { setTool(tools[k]); return; }
     if (k === 's') { toggleSnap(); return; }
     if (k === 'h' || k === 'home') { resetView(); return; }
     if (k === 'f') { focusSelected(); return; }
+    if (k === '+' || k === '=') { viewport.zoomBy(1 / 1.15); return; }
+    if (k === '-' || k === '_') { viewport.zoomBy(1.15); return; }
     if (k === ' ') { e.preventDefault(); sim.togglePlay(); return; }
     if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSelected(); }
   });
@@ -519,6 +657,16 @@ function initUI({ viewport, sim }) {
     if (e?.source === 'gizmo') fillScope($('[data-scope="item"]'));
   });
   bus.on('selection', updateDerived);
+  bus.on('slice', (info) => {
+    const el = $('#legend-slice');
+    el.hidden = !info;
+    if (!info) return;
+    const r = (v) => `${fmt(Math.round(v), 0)}`;
+    $('#legend-slice-top').textContent = `${r(info.top)} dB`;
+    $('#legend-slice-mid').textContent = r(info.top - info.range / 2);
+    $('#legend-slice-bot').textContent = r(info.top - info.range);
+  });
 
-  return { renderOutliner, showInspector, fillAll, toast };
+  resetHistory();
+  return { renderOutliner, showInspector, fillAll, toast, resetHistory };
 }

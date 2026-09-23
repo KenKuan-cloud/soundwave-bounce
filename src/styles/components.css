@@ -329,3 +329,31 @@ input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; }
 .ray-log tr.is-interf td:first-child { box-shadow: inset 3px 0 0 var(--source); }
 .callout.callout-ok { border-color: var(--border); background: var(--panel-2); }
 .callout.callout-ok b { color: var(--good); }
+
+/* ── Zoom control (right edge of the viewport) ── */
+.vp-zoom {
+  right: 10px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px;
+}
+.vp-zoom input[type="range"] {
+  writing-mode: vertical-lr; direction: rtl;
+  width: 20px; height: 150px; margin: 2px 0;
+}
+.zoom-readout { font-size: 10px; color: var(--text-faint); }
+@media (max-width: 960px) {
+  .vp-zoom input[type="range"] { height: 90px; }
+}
+
+/* Compare-sensors table spans the whole dock (readouts hidden). */
+.dock-body.is-wide .readouts { display: none; }
+.dock-body.is-wide .dock-pane-wide { grid-column: 1 / -1; }
+.sensors-table tbody tr { cursor: pointer; }
+.sensors-table tbody tr:hover td { background: var(--panel-2); }
+.sensors-table td.is-good { color: var(--good); }
+.sensors-table td.is-warn { color: var(--warn); }
+.sensors-table td.is-bad { color: var(--bad); }
+
+.btn:disabled { opacity: 0.35; cursor: default; }
+.btn:disabled:hover { background: transparent; border-color: transparent; }
+
+.legend-slice { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }

@@ -35,7 +35,24 @@
           <button class="btn btn-ghost" id="btn-presets" title="Example scenes" aria-haspopup="menu" aria-expanded="false">Presets ▾</button>
           <div class="menu" id="presets-menu" role="menu" hidden></div>
         </div>
+        <div class="menu-wrap">
+          <button class="btn btn-ghost" id="btn-export" title="Export" aria-haspopup="menu" aria-expanded="false">Export ▾</button>
+          <div class="menu" id="export-menu" role="menu" hidden>
+            <button role="menuitem" data-export="png">Screenshot of 3D view (PNG)</button>
+            <button role="menuitem" data-export="echo">Echo trace (CSV)</button>
+            <button role="menuitem" data-export="log">Ray log (CSV)</button>
+          </div>
+        </div>
         <input type="file" id="file-input" accept=".json,application/json" hidden>
+      </div>
+
+      <div class="toolbar-group" role="group" aria-label="Edit">
+        <button class="btn btn-icon" id="btn-undo" title="Undo (Ctrl+Z)" disabled>
+          <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
+        </button>
+        <button class="btn btn-icon" id="btn-redo" title="Redo (Ctrl+Y)" disabled>
+          <svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5M20 9H10a6 6 0 0 0 0 12h3" /></svg>
+        </button>
       </div>
 
       <div class="toolbar-group transport" role="group" aria-label="Simulation">
@@ -120,6 +137,7 @@
         <label class="check"><input type="checkbox" data-bind="cone"> Beam cone</label>
         <label class="check"><input type="checkbox" data-bind="allRays"> All ray paths</label>
         <label class="check"><input type="checkbox" data-bind="rxRays"> Rays that reach sensor</label>
+        <label class="check" title="Settings in the Simulation tab"><input type="checkbox" data-bind="slice"> Intensity slice</label>
         <label class="check"><input type="checkbox" data-bind="labels"> Labels</label>
         <label class="check"><input type="checkbox" data-bind="grid"> Grid &amp; axes</label>
       </section>
@@ -162,10 +180,26 @@
         </button>
       </div>
 
+      <div class="vp-overlay vp-zoom" role="group" aria-label="Zoom">
+        <button class="btn btn-icon" id="btn-zoom-in" title="Zoom in (+)">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+        <input type="range" id="zoom-slider" min="0" max="1000" step="1" value="500" aria-label="Zoom" title="Zoom (scroll wheel; hold Shift for finer steps)">
+        <button class="btn btn-icon" id="btn-zoom-out" title="Zoom out (−)">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
+        </button>
+        <span class="zoom-readout mono" id="zoom-readout">—</span>
+      </div>
+
       <div class="vp-overlay vp-legend" aria-label="Intensity legend">
         <span class="legend-label" title="Level relative to the transmitted level at 1 m">Intensity</span>
         <div class="legend-bar"></div>
         <div class="legend-ticks"><span>0 dB</span><span>−30</span><span>−60</span><span>−90</span></div>
+        <div class="legend-slice" id="legend-slice" hidden>
+          <span class="legend-label">Slice</span>
+          <div class="legend-bar"></div>
+          <div class="legend-ticks"><span id="legend-slice-top">0</span><span id="legend-slice-mid">−20</span><span id="legend-slice-bot">−40</span></div>
+        </div>
       </div>
 
       <div class="vp-overlay vp-time">
@@ -461,6 +495,20 @@
           </div>
           <p class="hint">Last trace: <span id="trace-info">—</span>. Small curved targets (thin pipes) need more rays for an accurate echo level.</p>
         </details>
+        <details class="group" open data-scope="display" id="slice-settings">
+          <summary>Intensity slice</summary>
+          <label class="check"><input type="checkbox" data-bind="slice"> Show slice plane</label>
+          <div class="field-row"><label>Plane</label>
+            <div class="segmented" data-bind="sliceMode" role="radiogroup">
+              <button data-value="vertical">Along the beam</button><button data-value="horizontal">Horizontal</button>
+            </div>
+          </div>
+          <div class="field-row" data-show-when="sliceMode=horizontal"><label>Height</label>
+            <div class="slider"><input type="range" data-bind="sliceHeight" min="0.05" max="3" step="0.05"><output data-out="sliceHeight" data-dec="2" data-unit=" m"></output></div>
+          </div>
+          <label class="check"><input type="checkbox" data-bind="sliceAll"> Include other emitters</label>
+          <p class="hint">A heat map of all the sound that passes through the plane during one ping, including every bounce, in dB relative to the active sensor's level at 1 m. The colours run from the plane's strongest spots down 40 dB (see the legend). It shows where the beam goes, where the floor catches it, and where reflections pile up.</p>
+        </details>
         <details class="group" open>
           <summary>Visualization</summary>
           <div class="field-row"><label>Particles shown</label>
@@ -490,6 +538,7 @@
           <button class="tab is-active" role="tab" data-pane="echo">Echo (A-scan)</button>
           <button class="tab" role="tab" data-pane="log">Ray log</button>
           <button class="tab" role="tab" data-pane="history">Distance history</button>
+          <button class="tab" role="tab" data-pane="sensors">Compare sensors</button>
         </div>
         <div class="dock-legend">
           <span><i class="sw sw-echo"></i>Own echoes</span>
@@ -509,6 +558,12 @@
           <table class="ray-log">
             <thead><tr><th>Arrival</th><th>Reads as</th><th>Level ▾</th><th>Path</th></tr></thead>
             <tbody id="ray-log-body"></tbody>
+          </table>
+        </div>
+        <div class="dock-pane dock-pane-scroll dock-pane-wide" data-pane="sensors" hidden>
+          <table class="ray-log sensors-table">
+            <thead><tr><th>Sensor</th><th>Freq</th><th>True</th><th>Measured</th><th>Error</th><th>Status</th><th>Why</th></tr></thead>
+            <tbody id="sensors-body"></tbody>
           </table>
         </div>
         <div class="dock-pane" data-pane="history" hidden>
@@ -579,6 +634,8 @@
       <div><dt>H</dt><dd>Reset view</dd></div>
       <div><dt>Del</dt><dd>Delete selected</dd></div>
       <div><dt>Ctrl + D</dt><dd>Duplicate selected</dd></div>
+      <div><dt>Ctrl + Z / Y</dt><dd>Undo / redo</dd></div>
+      <div><dt>+ / −</dt><dd>Zoom (Shift + scroll = fine)</dd></div>
       <div><dt>Esc</dt><dd>Deselect</dd></div>
     </dl>
     <h3>Model and limits</h3>

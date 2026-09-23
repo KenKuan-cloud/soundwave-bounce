@@ -511,6 +511,34 @@
     .ray-log tr.is-interf td:first-child { box-shadow: inset 3px 0 0 var(--source); }
     .callout.callout-ok { border-color: var(--border); background: var(--panel-2); }
     .callout.callout-ok b { color: var(--good); }
+
+    /* ── Zoom control (right edge of the viewport) ── */
+    .vp-zoom {
+      right: 10px; top: 50%; transform: translateY(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px;
+    }
+    .vp-zoom input[type="range"] {
+      writing-mode: vertical-lr; direction: rtl;
+      width: 20px; height: 150px; margin: 2px 0;
+    }
+    .zoom-readout { font-size: 10px; color: var(--text-faint); }
+    @media (max-width: 960px) {
+      .vp-zoom input[type="range"] { height: 90px; }
+    }
+
+    /* Compare-sensors table spans the whole dock (readouts hidden). */
+    .dock-body.is-wide .readouts { display: none; }
+    .dock-body.is-wide .dock-pane-wide { grid-column: 1 / -1; }
+    .sensors-table tbody tr { cursor: pointer; }
+    .sensors-table tbody tr:hover td { background: var(--panel-2); }
+    .sensors-table td.is-good { color: var(--good); }
+    .sensors-table td.is-warn { color: var(--warn); }
+    .sensors-table td.is-bad { color: var(--bad); }
+
+    .btn:disabled { opacity: 0.35; cursor: default; }
+    .btn:disabled:hover { background: transparent; border-color: transparent; }
+
+    .legend-slice { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
   </style>
   <script type="importmap">
     {
@@ -541,7 +569,24 @@
           <button class="btn btn-ghost" id="btn-presets" title="Example scenes" aria-haspopup="menu" aria-expanded="false">Presets ▾</button>
           <div class="menu" id="presets-menu" role="menu" hidden></div>
         </div>
+        <div class="menu-wrap">
+          <button class="btn btn-ghost" id="btn-export" title="Export" aria-haspopup="menu" aria-expanded="false">Export ▾</button>
+          <div class="menu" id="export-menu" role="menu" hidden>
+            <button role="menuitem" data-export="png">Screenshot of 3D view (PNG)</button>
+            <button role="menuitem" data-export="echo">Echo trace (CSV)</button>
+            <button role="menuitem" data-export="log">Ray log (CSV)</button>
+          </div>
+        </div>
         <input type="file" id="file-input" accept=".json,application/json" hidden>
+      </div>
+
+      <div class="toolbar-group" role="group" aria-label="Edit">
+        <button class="btn btn-icon" id="btn-undo" title="Undo (Ctrl+Z)" disabled>
+          <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3" /></svg>
+        </button>
+        <button class="btn btn-icon" id="btn-redo" title="Redo (Ctrl+Y)" disabled>
+          <svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5M20 9H10a6 6 0 0 0 0 12h3" /></svg>
+        </button>
       </div>
 
       <div class="toolbar-group transport" role="group" aria-label="Simulation">
@@ -626,6 +671,7 @@
         <label class="check"><input type="checkbox" data-bind="cone"> Beam cone</label>
         <label class="check"><input type="checkbox" data-bind="allRays"> All ray paths</label>
         <label class="check"><input type="checkbox" data-bind="rxRays"> Rays that reach sensor</label>
+        <label class="check" title="Settings in the Simulation tab"><input type="checkbox" data-bind="slice"> Intensity slice</label>
         <label class="check"><input type="checkbox" data-bind="labels"> Labels</label>
         <label class="check"><input type="checkbox" data-bind="grid"> Grid &amp; axes</label>
       </section>
@@ -668,10 +714,26 @@
         </button>
       </div>
 
+      <div class="vp-overlay vp-zoom" role="group" aria-label="Zoom">
+        <button class="btn btn-icon" id="btn-zoom-in" title="Zoom in (+)">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+        <input type="range" id="zoom-slider" min="0" max="1000" step="1" value="500" aria-label="Zoom" title="Zoom (scroll wheel; hold Shift for finer steps)">
+        <button class="btn btn-icon" id="btn-zoom-out" title="Zoom out (−)">
+          <svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>
+        </button>
+        <span class="zoom-readout mono" id="zoom-readout">—</span>
+      </div>
+
       <div class="vp-overlay vp-legend" aria-label="Intensity legend">
         <span class="legend-label" title="Level relative to the transmitted level at 1 m">Intensity</span>
         <div class="legend-bar"></div>
         <div class="legend-ticks"><span>0 dB</span><span>−30</span><span>−60</span><span>−90</span></div>
+        <div class="legend-slice" id="legend-slice" hidden>
+          <span class="legend-label">Slice</span>
+          <div class="legend-bar"></div>
+          <div class="legend-ticks"><span id="legend-slice-top">0</span><span id="legend-slice-mid">−20</span><span id="legend-slice-bot">−40</span></div>
+        </div>
       </div>
 
       <div class="vp-overlay vp-time">
@@ -967,6 +1029,20 @@
           </div>
           <p class="hint">Last trace: <span id="trace-info">—</span>. Small curved targets (thin pipes) need more rays for an accurate echo level.</p>
         </details>
+        <details class="group" open data-scope="display" id="slice-settings">
+          <summary>Intensity slice</summary>
+          <label class="check"><input type="checkbox" data-bind="slice"> Show slice plane</label>
+          <div class="field-row"><label>Plane</label>
+            <div class="segmented" data-bind="sliceMode" role="radiogroup">
+              <button data-value="vertical">Along the beam</button><button data-value="horizontal">Horizontal</button>
+            </div>
+          </div>
+          <div class="field-row" data-show-when="sliceMode=horizontal"><label>Height</label>
+            <div class="slider"><input type="range" data-bind="sliceHeight" min="0.05" max="3" step="0.05"><output data-out="sliceHeight" data-dec="2" data-unit=" m"></output></div>
+          </div>
+          <label class="check"><input type="checkbox" data-bind="sliceAll"> Include other emitters</label>
+          <p class="hint">A heat map of all the sound that passes through the plane during one ping, including every bounce, in dB relative to the active sensor's level at 1 m. The colours run from the plane's strongest spots down 40 dB (see the legend). It shows where the beam goes, where the floor catches it, and where reflections pile up.</p>
+        </details>
         <details class="group" open>
           <summary>Visualization</summary>
           <div class="field-row"><label>Particles shown</label>
@@ -996,6 +1072,7 @@
           <button class="tab is-active" role="tab" data-pane="echo">Echo (A-scan)</button>
           <button class="tab" role="tab" data-pane="log">Ray log</button>
           <button class="tab" role="tab" data-pane="history">Distance history</button>
+          <button class="tab" role="tab" data-pane="sensors">Compare sensors</button>
         </div>
         <div class="dock-legend">
           <span><i class="sw sw-echo"></i>Own echoes</span>
@@ -1015,6 +1092,12 @@
           <table class="ray-log">
             <thead><tr><th>Arrival</th><th>Reads as</th><th>Level ▾</th><th>Path</th></tr></thead>
             <tbody id="ray-log-body"></tbody>
+          </table>
+        </div>
+        <div class="dock-pane dock-pane-scroll dock-pane-wide" data-pane="sensors" hidden>
+          <table class="ray-log sensors-table">
+            <thead><tr><th>Sensor</th><th>Freq</th><th>True</th><th>Measured</th><th>Error</th><th>Status</th><th>Why</th></tr></thead>
+            <tbody id="sensors-body"></tbody>
           </table>
         </div>
         <div class="dock-pane" data-pane="history" hidden>
@@ -1085,6 +1168,8 @@
       <div><dt>H</dt><dd>Reset view</dd></div>
       <div><dt>Del</dt><dd>Delete selected</dd></div>
       <div><dt>Ctrl + D</dt><dd>Duplicate selected</dd></div>
+      <div><dt>Ctrl + Z / Y</dt><dd>Undo / redo</dd></div>
+      <div><dt>+ / −</dt><dd>Zoom (Shift + scroll = fine)</dd></div>
       <div><dt>Esc</dt><dd>Deselect</dd></div>
     </dl>
     <h3>Model and limits</h3>
@@ -1238,6 +1323,7 @@
       wood:     { label: 'Wood',              absorption: 0.06, scattering: 0.1,  color: 0xa57a4f },
       steel:    { label: 'Steel',             absorption: 0.01, scattering: 0.02, color: 0xaab4bf, metal: true },
       glass:    { label: 'Glass',             absorption: 0.01, scattering: 0.01, color: 0x9fd4e8, glass: true },
+      water:    { label: 'Water (still)',     absorption: 0.001, scattering: 0,   color: 0x2f7fb8, glass: true },
       foam:     { label: 'Acoustic foam',     absorption: 0.85, scattering: 0.7,  color: 0x3d4350 },
       fabric:   { label: 'Fabric / curtain',  absorption: 0.55, scattering: 0.6,  color: 0x6d5a8c },
       custom:   { label: 'Custom',            absorption: null, scattering: null, color: 0x7f8fa0 },
@@ -1278,7 +1364,10 @@
     }
 
     function defaultDisplay() {
-      return { particles: true, cone: true, allRays: false, rxRays: true, grid: true, labels: true };
+      return {
+        particles: true, cone: true, allRays: false, rxRays: true, grid: true, labels: true,
+        slice: false, sliceMode: 'vertical', sliceHeight: 1, sliceAll: false,
+      };
     }
 
     const v3 = (x, y, z) => ({ x, y, z });
@@ -1393,6 +1482,52 @@
           withMaterial('wall', 'concrete', { name: 'Wall', pos: { x: 2.5, y: 1, z: 0 } }),
         ],
       },
+      corridor: {
+        label: 'Corridor, sensor at an angle',
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -3.5, y: 1, z: 0.4 }, yaw: -25 }),
+          withMaterial('wall', 'concrete', { name: 'Left wall', pos: { x: 0, y: 1, z: -1 }, rot: { y: 90 }, size: { x: 0.1, y: 2, z: 8 } }),
+          withMaterial('wall', 'concrete', { name: 'Right wall', pos: { x: 0, y: 1, z: 1 }, rot: { y: 90 }, size: { x: 0.1, y: 2, z: 8 } }),
+          withMaterial('wall', 'wood', { name: 'Door at the end', pos: { x: 2, y: 1, z: 0 }, size: { x: 0.08, y: 2, z: 1.9 } }),
+        ],
+      },
+      pipeRack: {
+        label: 'Pipe rack (thin vs thick)',
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -2.5, y: 1, z: 0 } }),
+          withMaterial('pipe', 'steel', { name: 'Pipe Ø20 mm', pos: { x: -0.5, y: 1.2, z: 0.15 }, radius: 0.01 }),
+          withMaterial('pipe', 'steel', { name: 'Pipe Ø60 mm', pos: { x: 0.5, y: 1.2, z: -0.1 }, radius: 0.03 }),
+          withMaterial('pipe', 'steel', { name: 'Pipe Ø200 mm', pos: { x: 1.6, y: 1.2, z: 0.05 }, radius: 0.1 }),
+        ],
+      },
+      tank: {
+        label: 'Tank level (looking down)',
+        items: () => [
+          makeItem('sensor', { name: 'Level sensor', pos: { x: 0, y: 2.8, z: 0 }, pitch: -90, maxRange: 4 }),
+          withMaterial('block', 'water', { name: 'Liquid', pos: { x: 0, y: 0.5, z: 0 }, size: { x: 1.4, y: 1, z: 1.4 } }),
+          withMaterial('wall', 'steel', { name: 'Tank wall 1', pos: { x: 0.75, y: 1.5, z: 0 }, size: { x: 0.04, y: 3, z: 1.54 } }),
+          withMaterial('wall', 'steel', { name: 'Tank wall 2', pos: { x: -0.75, y: 1.5, z: 0 }, size: { x: 0.04, y: 3, z: 1.54 } }),
+          withMaterial('wall', 'steel', { name: 'Tank wall 3', pos: { x: 0, y: 1.5, z: 0.75 }, rot: { y: 90 }, size: { x: 0.04, y: 3, z: 1.46 } }),
+          withMaterial('wall', 'steel', { name: 'Tank wall 4', pos: { x: 0, y: 1.5, z: -0.75 }, rot: { y: 90 }, size: { x: 0.04, y: 3, z: 1.46 } }),
+        ],
+      },
+      parking: {
+        label: 'Parking: pole and kerb',
+        items: () => [
+          makeItem('sensor', { name: 'Bumper sensor', pos: { x: -1.5, y: 0.5, z: 0 }, pitch: 5, model: 'maxbotix', freq: 42, bw: 3, halfAngle: 30, maxRange: 3 }),
+          withMaterial('pipe', 'steel', { name: 'Pole', pos: { x: 0.3, y: 0.6, z: 0.35 }, radius: 0.04, length: 1.2 }),
+          withMaterial('block', 'concrete', { name: 'Kerb', pos: { x: 1.2, y: 0.07, z: 0 }, size: { x: 0.15, y: 0.14, z: 3 } }),
+        ],
+      },
+      room: {
+        label: 'Enclosed room (reverberation)',
+        env: { room: { enclosed: true, w: 6, h: 3, d: 5 } },
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1.2, z: 0.5 }, yaw: 10 }),
+          withMaterial('block', 'wood', { name: 'Cabinet', pos: { x: 1.2, y: 0.5, z: -1.2 }, size: { x: 0.6, y: 1, z: 1 } }),
+          withMaterial('block', 'fabric', { name: 'Sofa', pos: { x: 0.6, y: 0.4, z: 1.5 }, size: { x: 2, y: 0.8, z: 0.9 } }),
+        ],
+      },
       empty: {
         label: 'Empty',
         items: () => [makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0 } })],
@@ -1440,7 +1575,7 @@
       loadPreset(key) {
         const p = PRESETS[key] || PRESETS.demo;
         // Keep the user's simulation and display settings across scenes.
-        this.load({ items: p.items(), sim: this.state?.sim, display: this.state?.display });
+        this.load({ items: p.items(), env: p.env ? deepClone(p.env) : undefined, sim: this.state?.sim, display: this.state?.display });
       },
 
       serialize() {
@@ -1507,6 +1642,7 @@
     const INTENSITY_RAMP = ['#fff4b0', '#ffb44a', '#ff4d6d', '#8e3bd9', '#2a2f7a'].map((c) => new THREE.Color(c));
     const BOUNCE_COLORS = ['#3fb6ff', '#3ecf8e', '#f5c451', '#ff9f43', '#ff5d6c', '#b58cff', '#9aa8b8'].map((c) => new THREE.Color(c));
     const LEGEND_RANGE_DB = 90;
+    const SLICE_RANGE_DB = 40;
 
     function intensityColor(t, out = new THREE.Color()) {
       // t: 0 = loudest, 1 = quietest
@@ -1548,13 +1684,35 @@
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
-      // Gentler zoom with limits, so a fast scroll can't fly through the scene
-      // or shrink it to a dot.
-      controls.zoomSpeed = 0.45;
+      // Zoom limits, so zooming can't fly through the scene or shrink it to a dot.
       controls.minDistance = 0.4;
       controls.maxDistance = 25;
       controls.maxPolarAngle = Math.PI * 0.49;
+
+      // ── Zoom ──
+      // Mouse-wheel zoom is handled here instead of by OrbitControls: the step
+      // follows how far the wheel/trackpad moved, so it is fine-grained on both.
+      // Shift makes it 4× finer. Pinch-zoom on touch screens still uses OrbitControls.
+      const ZOOM_PER_PIXEL = 0.00015; // ≈1.5 % per mouse-wheel notch
+      const zoomListeners = [];
+      function getDistance() { return camera.position.distanceTo(controls.target); }
+      function setDistance(d) {
+        const off = camera.position.clone().sub(controls.target);
+        off.setLength(clamp(d, controls.minDistance, controls.maxDistance));
+        camera.position.copy(controls.target).add(off);
+        controls.update();
+      }
+      function zoomBy(factor) { setDistance(getDistance() * factor); }
+      container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        e.stopPropagation(); // capture phase: OrbitControls never sees the wheel
+        const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+        const k = e.shiftKey ? ZOOM_PER_PIXEL / 4 : ZOOM_PER_PIXEL;
+        zoomBy(Math.exp(clamp(px, -150, 150) * k));
+      }, { capture: true, passive: false });
+
       controls.addEventListener('change', () => {
+        for (const fn of zoomListeners) fn(getDistance());
         // Keep the orbit centre inside the room so panning can't lose the scene.
         const { room } = store.state.env;
         const t = controls.target;
@@ -1981,8 +2139,57 @@
         setLineGeometry(rxLines, pos, col);
       }
 
+      // ── Intensity slice (heat map) ──
+      const sliceMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false })
+      );
+      sliceMesh.visible = false;
+      sliceMesh.renderOrder = -1;
+      noRaycast(sliceMesh);
+      scene.add(sliceMesh);
+
+      function buildSlice(field) {
+        if (sliceMesh.material.map) { sliceMesh.material.map.dispose(); sliceMesh.material.map = null; }
+        sliceMesh.visible = !!field && store.state.display.slice;
+        if (!sliceMesh.visible) { bus.emit('slice', null); return; }
+        const { nu, nv, db } = field;
+        // Own colour scale: 0 = the plane's strongest spots (99th percentile, so a
+        // single hot cell next to the transducer doesn't set it), SLICE_RANGE_DB below.
+        const finite = [];
+        const step = Math.max(1, Math.floor(db.length / 20000));
+        for (let k = 0; k < db.length; k += step) if (Number.isFinite(db[k])) finite.push(db[k]);
+        finite.sort((a, b) => a - b);
+        const top = finite.length ? finite[Math.floor(finite.length * 0.99)] : 0;
+        const data = new Uint8Array(nu * nv * 4);
+        const c = new THREE.Color();
+        for (let k = 0; k < nu * nv; k++) {
+          const t = (top - db[k]) / SLICE_RANGE_DB;
+          if (!(t <= 1)) continue; // too weak (or nothing): transparent
+          const hex = intensityColor(t, c).getHex();
+          data[k * 4] = (hex >> 16) & 255;
+          data[k * 4 + 1] = (hex >> 8) & 255;
+          data[k * 4 + 2] = hex & 255;
+          data[k * 4 + 3] = Math.round(235 - 110 * clamp(t, 0, 1)); // weak areas more see-through
+        }
+        bus.emit('slice', { top, range: SLICE_RANGE_DB });
+        const tex = new THREE.DataTexture(data, nu, nv, THREE.RGBAFormat);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.magFilter = THREE.LinearFilter;
+        tex.needsUpdate = true;
+        sliceMesh.material.map = tex;
+        sliceMesh.material.needsUpdate = true;
+        const u = new THREE.Vector3(...field.u), v = new THREE.Vector3(...field.v);
+        const n = new THREE.Vector3().crossVectors(u, v);
+        sliceMesh.matrixAutoUpdate = false;
+        sliceMesh.matrix.makeBasis(u, v, n)
+          .scale(new THREE.Vector3(2 * field.halfU, 2 * field.halfV, 1))
+          .setPosition(new THREE.Vector3(...field.p0));
+      }
+
       function setResult(result) {
         vis.result = result;
+        buildSlice(result?.field);
         if (result) {
           vis.alphaDb = result.alphaDb;
           vis.c = result.c;
@@ -2090,6 +2297,15 @@
         select: updateGizmo,
         setTool, setSnap, setView,
         setResult, setTime, frameSelected,
+        zoomBy, getDistance, setDistance,
+        // PNG of the 3D view (rendered on demand; labels are HTML and not included).
+        screenshot() {
+          renderer.render(scene, camera);
+          return renderer.domElement.toDataURL('image/png');
+        },
+        get minDistance() { return controls.minDistance; },
+        get maxDistance() { return controls.maxDistance; },
+        onZoom(fn) { zoomListeners.push(fn); },
         refreshLines() { buildRayLines(); buildRxLines(); },
         get snap() { return snap; },
       };
@@ -2359,6 +2575,70 @@
       return out;
     }
 
+    // ── Intensity slice ──
+    // A plane (centre p0, in-plane axes u, v, normal n) with a grid of square
+    // cells. Rays deposit power × path length inside a thin slab around the
+    // plane; dividing by the cell volume gives intensity. Works for any plane,
+    // including one the rays travel along.
+    function makeField({ p0, u, v, n, halfU, halfV, cell = 0.05, thick = 0.1 }) {
+      const nu = Math.max(1, Math.round(2 * halfU / cell));
+      const nv = Math.max(1, Math.round(2 * halfV / cell));
+      return { p0, u, v, n, halfU, halfV, cell, thick, nu, nv, sum: new Float64Array(nu * nv) };
+    }
+
+    function depositSegment(field, o, d, segLen, L, E, alphaNp, scale) {
+      const { p0, n, u, v, thick, cell, nu, nv, halfU, halfV } = field;
+      const a = (o[0] - p0[0]) * n[0] + (o[1] - p0[1]) * n[1] + (o[2] - p0[2]) * n[2];
+      const b = dot3(d, n);
+      const h = thick / 2;
+      let s0, s1;
+      if (Math.abs(b) < 1e-9) {
+        if (Math.abs(a) > h) return;
+        s0 = 0; s1 = segLen;
+      } else {
+        s0 = (-h - a) / b; s1 = (h - a) / b;
+        if (s0 > s1) [s0, s1] = [s1, s0];
+        s0 = Math.max(0, s0); s1 = Math.min(segLen, s1);
+        if (s1 <= s0) return;
+      }
+      const steps = Math.min(600, Math.ceil((s1 - s0) / (cell / 2)));
+      const ds = (s1 - s0) / steps;
+      const ou = (o[0] - p0[0]) * u[0] + (o[1] - p0[1]) * u[1] + (o[2] - p0[2]) * u[2];
+      const ov = (o[0] - p0[0]) * v[0] + (o[1] - p0[1]) * v[1] + (o[2] - p0[2]) * v[2];
+      const du = dot3(d, u), dv = dot3(d, v);
+      for (let k = 0; k < steps; k++) {
+        const s = s0 + (k + 0.5) * ds;
+        const i = Math.floor((ou + du * s + halfU) / cell);
+        const j = Math.floor((ov + dv * s + halfV) / cell);
+        if (i < 0 || j < 0 || i >= nu || j >= nv) continue;
+        field.sum[j * nu + i] += scale * E * Math.exp(-alphaNp * (L + s)) * ds;
+      }
+    }
+
+    // Field sums → dB (re. the active sensor's Tx at 1 m), lightly smoothed.
+    function finishField(field) {
+      const { nu, nv, sum, cell, thick } = field;
+      const vol = cell * cell * thick;
+      const db = new Float32Array(nu * nv);
+      for (let j = 0; j < nv; j++) {
+        for (let i = 0; i < nu; i++) {
+          let acc = 0, w = 0;
+          for (let dj = -1; dj <= 1; dj++) {
+            for (let di = -1; di <= 1; di++) {
+              const x = i + di, y = j + dj;
+              if (x < 0 || y < 0 || x >= nu || y >= nv) continue;
+              const wt = di === 0 && dj === 0 ? 4 : di === 0 || dj === 0 ? 2 : 1;
+              acc += sum[y * nu + x] * wt;
+              w += wt;
+            }
+          }
+          const I = acc / w / vol;
+          db[j * nu + i] = I > 0 ? 10 * Math.log10(I) : -Infinity;
+        }
+      }
+      return { nu, nv, db, p0: field.p0, u: field.u, v: field.v, n: field.n, halfU: field.halfU, halfV: field.halfV };
+    }
+
     // ── Emitter → receiver trace ──
     // Arrival powers are relative to the emitter's on-axis intensity at 1 m.
     // `monostatic`: emitter and receiver are the same transducer (own echoes).
@@ -2468,6 +2748,7 @@
           const prim = hit ? hit.prim : null;
           const nHit = hit ? [hit.n[0], hit.n[1], hit.n[2]] : null;
           const curvature = hit ? hit.curvature : 0;
+          if (cfg.field) depositSegment(cfg.field, o, d, segLen, L, E, alphaNp, cfg.fieldScale || 1);
 
           // Specular sound passing the receiver on this segment?
           // (The direct, unreflected path is computed exactly below.)
@@ -2638,6 +2919,32 @@
       return { power, binTopI, binTopLabel, groups, top, viz, rays: N, nBins };
     }
 
+    // Where the intensity slice goes: parallel to the floor at a height, or
+    // upright along the sensor's beam.
+    function slicePlane(state, sensor) {
+      const { room } = state.env;
+      const d = state.display;
+      if (d.sliceMode === 'vertical') {
+        const f = aimVector(sensor.yaw, sensor.pitch);
+        let fh = [f[0], 0, f[2]];
+        const l = Math.hypot(fh[0], fh[2]);
+        fh = l > 1e-3 ? [fh[0] / l, 0, fh[2] / l] : [1, 0, 0];
+        const n = [fh[2], 0, -fh[0]]; // horizontal, perpendicular to the beam
+        const height = room.enclosed ? room.h : Math.max(3, sensor.pos.y + 1);
+        const along = sensor.maxRange + 1;
+        return {
+          p0: [sensor.pos.x + fh[0] * (along / 2 - 0.5), height / 2, sensor.pos.z + fh[2] * (along / 2 - 0.5)],
+          u: fh, v: [0, 1, 0], n,
+          halfU: along / 2, halfV: height / 2,
+        };
+      }
+      return {
+        p0: [0, clamp(d.sliceHeight, 0.02, 50), 0],
+        u: [1, 0, 0], v: [0, 0, -1], n: [0, 1, 0],
+        halfU: room.w / 2, halfV: room.d / 2,
+      };
+    }
+
     // ── Sensor trace: own echoes + everything that can interfere ──
     function traceSensor(state, sensor, prims = buildPrimitives(state)) {
       const started = (typeof performance !== 'undefined' ? performance : Date).now();
@@ -2653,11 +2960,13 @@
       const fwd = aimVector(sensor.yaw, sensor.pitch);
       const rx = [sensor.pos.x, sensor.pos.y, sensor.pos.z];
 
+      const field = state.display?.slice ? makeField(slicePlane(state, sensor)) : null;
       const own = traceEmitter({
         prims, sim, c, alphaDb, tMax, dtMs,
         txPos: rx, txFwd: fwd, txBeam: sensorBeam,
         rxPos: rx, rxFwd: fwd, rxBeam: sensorBeam,
         monostatic: true, rays: sim.rays, vizCount: sim.particles,
+        field,
       });
       const tx = sensor.txLevel;
 
@@ -2696,6 +3005,8 @@
             txBeam: makeBeam(isSensor ? it.halfAngle : it.directivity),
             rxPos: rx, rxFwd: fwd, rxBeam: sensorBeam,
             monostatic: false,
+            field: state.display?.sliceAll ? field : null,
+            fieldScale: Math.pow(10, (info.levelDb - sensor.txLevel) / 10),
             rays: Math.min(sim.rays, 10000),
             vizCount: Math.min(sim.particles, continuous ? 600 : 2000),
             seed: 7919 * (idx + 2),
@@ -2740,6 +3051,7 @@
         top: own.top,
         viz: own.viz,
         rays: own.rays,
+        field: field ? finishField(field) : null,
       };
       composePing(result, 0);
       result.traceMs = (typeof performance !== 'undefined' ? performance : Date).now() - started;
@@ -3264,6 +3576,8 @@
 
       function selectItem(id) {
         store.select(id);
+        // Show the picked item's properties even if another tab is open.
+        if (id) $('.panel-right > .tabs .tab[data-tab="props"]')?.click();
         renderOutliner();
         showInspector();
         viewport.sync();
@@ -3339,6 +3653,7 @@
 
       function fillAll() {
         for (const s of $$('[data-scope]')) fillScope(s);
+        applyShowWhen($('#slice-settings'), store.state.display);
         updateDerived();
         updateSourceCallout();
       }
@@ -3422,8 +3737,12 @@
           if (path === 'colorBy' || path === 'vizRangeDb') viewport.refreshLines();
           else bus.emit('scene', { source: 'sim' });
         } else if (scope === 'display') {
+          fillAll();
+          applyShowWhen($('#slice-settings'), store.state.display);
           viewport.sync();
           viewport.refreshLines();
+          // The slice is computed by the tracer.
+          if (path.startsWith('slice')) bus.emit('scene', { source: 'slice' });
         }
       }
 
@@ -3492,6 +3811,8 @@
         tab.addEventListener('click', () => {
           $$('.dock .tab[data-pane]').forEach((t) => t.classList.toggle('is-active', t === tab));
           $$('.dock-pane').forEach((p) => { p.hidden = p.dataset.pane !== tab.dataset.pane; });
+          document.querySelector('.dock-body').classList.toggle('is-wide', tab.dataset.pane === 'sensors');
+          bus.emit('pane', tab.dataset.pane);
         });
       });
 
@@ -3517,6 +3838,24 @@
         if (!viewport.frameSelected()) toast('Select something to focus on');
       }
       $('#btn-reset-view').addEventListener('click', resetView);
+
+      // Zoom slider: logarithmic in camera distance, top = closest.
+      const zoomSlider = $('#zoom-slider');
+      const zoomToSlider = (d) => {
+        const lo = Math.log(viewport.minDistance), hi = Math.log(viewport.maxDistance);
+        return Math.round(1000 * (hi - Math.log(d)) / (hi - lo));
+      };
+      const sliderToZoom = (v) => {
+        const lo = Math.log(viewport.minDistance), hi = Math.log(viewport.maxDistance);
+        return Math.exp(hi - (v / 1000) * (hi - lo));
+      };
+      viewport.onZoom((d) => {
+        if (document.activeElement !== zoomSlider) zoomSlider.value = String(zoomToSlider(d));
+        $('#zoom-readout').textContent = `${fmt(d, d < 10 ? 1 : 0)} m`;
+      });
+      zoomSlider.addEventListener('input', () => viewport.setDistance(sliderToZoom(Number(zoomSlider.value))));
+      $('#btn-zoom-in').addEventListener('click', () => viewport.zoomBy(1 / 1.15));
+      $('#btn-zoom-out').addEventListener('click', () => viewport.zoomBy(1.15));
       $('#btn-focus').addEventListener('click', focusSelected);
       $$('.vp-views [data-view]').forEach((b) => {
         b.addEventListener('click', () => {
@@ -3589,6 +3928,7 @@
         sim.clearHistory();
         sim.reset();
         bus.emit('scene', { source: 'load' });
+        resetHistory();
         viewport.setView('persp');
       }
 
@@ -3650,6 +3990,107 @@
       });
       document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.menu-wrap')) setMenu(false); });
 
+      function download(name, href) {
+        const a = document.createElement('a');
+        a.href = href;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        if (href.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(href), 1000);
+      }
+      const blobUrl = (text, type) => URL.createObjectURL(new Blob([text], { type }));
+
+      // ── Export ──
+      const exportBtn = $('#btn-export');
+      const exportMenu = $('#export-menu');
+      function setExportMenu(open) {
+        exportMenu.hidden = !open;
+        exportBtn.setAttribute('aria-expanded', String(open));
+        if (open) exportMenu.querySelector('button')?.focus();
+      }
+      exportBtn.addEventListener('click', (e) => { e.stopPropagation(); setMenu(false); setExportMenu(exportMenu.hidden); });
+      exportMenu.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-export]');
+        if (!b) return;
+        setExportMenu(false);
+        if (b.dataset.export === 'png') {
+          download('soundwave-view.png', viewport.screenshot());
+        } else if (b.dataset.export === 'echo') {
+          const csv = sim.echoCsv();
+          if (!csv) { toast('Add a sensor first'); return; }
+          download('soundwave-echo.csv', blobUrl(csv, 'text/csv'));
+        } else {
+          download('soundwave-ray-log.csv', blobUrl(sim.logCsv(), 'text/csv'));
+        }
+        toast('Exported');
+      });
+      document.addEventListener('click', (e) => { if (!exportMenu.hidden && !e.target.closest('.menu-wrap')) setExportMenu(false); });
+
+      // ── Undo / redo ──
+      // Snapshots of the scene (items + environment), taken once edits settle.
+      const undoStack = [];
+      const redoStack = [];
+      let snapTimer = null;
+      const snapshot = () => JSON.stringify({ items: store.state.items, env: store.state.env });
+      function resetHistory() {
+        undoStack.length = 0;
+        redoStack.length = 0;
+        undoStack.push(snapshot());
+        updateUndoButtons();
+      }
+      function recordSoon() {
+        clearTimeout(snapTimer);
+        snapTimer = setTimeout(() => {
+          const s = snapshot();
+          if (s === undoStack[undoStack.length - 1]) return;
+          undoStack.push(s);
+          if (undoStack.length > 100) undoStack.shift();
+          redoStack.length = 0;
+          updateUndoButtons();
+        }, 350);
+      }
+      function updateUndoButtons() {
+        $('#btn-undo').disabled = undoStack.length < 2;
+        $('#btn-redo').disabled = redoStack.length === 0;
+      }
+      function restore(snap) {
+        const data = JSON.parse(snap);
+        store.state.items = data.items;
+        store.state.env = data.env;
+        if (!store.get(store.selectedId)) store.selectedId = null;
+        if (!store.get(store.activeSensorId)) store.activeSensorId = store.activeSensor()?.id ?? null;
+        viewport.rebuild();
+        renderOutliner();
+        showInspector();
+        fillAll();
+        bus.emit('scene', { source: 'undo' });
+      }
+      function undo() {
+        clearTimeout(snapTimer);
+        // Capture edits that haven't been recorded yet, so they can be redone.
+        const now = snapshot();
+        if (now !== undoStack[undoStack.length - 1]) undoStack.push(now);
+        if (undoStack.length < 2) return;
+        redoStack.push(undoStack.pop());
+        restore(undoStack[undoStack.length - 1]);
+        updateUndoButtons();
+      }
+      function redo() {
+        if (!redoStack.length) return;
+        const s = redoStack.pop();
+        undoStack.push(s);
+        restore(s);
+        updateUndoButtons();
+      }
+      $('#btn-undo').addEventListener('click', undo);
+      $('#btn-redo').addEventListener('click', redo);
+      bus.on('scene', (e) => {
+        const src = e?.source;
+        if (src === 'undo' || src === 'load' || src === 'gizmo' || src === 'sim' || src === 'slice') return;
+        recordSoon();
+      });
+
       // ── Transport ──
       $('#btn-play').addEventListener('click', () => sim.togglePlay());
       $('#btn-reset').addEventListener('click', () => sim.reset());
@@ -3667,13 +4108,22 @@
         if (e.target.matches('input, select, textarea') || help.open) return;
         const k = e.key.toLowerCase();
         if ((e.ctrlKey || e.metaKey) && k === 'd') { e.preventDefault(); duplicateSelected(); return; }
+        if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+        if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redo(); return; }
         if (e.ctrlKey || e.metaKey || e.altKey) return;
-        if (k === 'escape') { if (!menu.hidden) setMenu(false); else selectItem(null); return; }
+        if (k === 'escape') {
+          if (!menu.hidden) setMenu(false);
+          else if (!exportMenu.hidden) setExportMenu(false);
+          else selectItem(null);
+          return;
+        }
         const tools = { q: 'select', w: 'move', e: 'rotate', r: 'scale' };
         if (tools[k]) { setTool(tools[k]); return; }
         if (k === 's') { toggleSnap(); return; }
         if (k === 'h' || k === 'home') { resetView(); return; }
         if (k === 'f') { focusSelected(); return; }
+        if (k === '+' || k === '=') { viewport.zoomBy(1 / 1.15); return; }
+        if (k === '-' || k === '_') { viewport.zoomBy(1.15); return; }
         if (k === ' ') { e.preventDefault(); sim.togglePlay(); return; }
         if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSelected(); }
       });
@@ -3683,8 +4133,18 @@
         if (e?.source === 'gizmo') fillScope($('[data-scope="item"]'));
       });
       bus.on('selection', updateDerived);
+      bus.on('slice', (info) => {
+        const el = $('#legend-slice');
+        el.hidden = !info;
+        if (!info) return;
+        const r = (v) => `${fmt(Math.round(v), 0)}`;
+        $('#legend-slice-top').textContent = `${r(info.top)} dB`;
+        $('#legend-slice-mid').textContent = r(info.top - info.range / 2);
+        $('#legend-slice-bot').textContent = r(info.top - info.range);
+      });
 
-      return { renderOutliner, showInspector, fillAll, toast };
+      resetHistory();
+      return { renderOutliner, showInspector, fillAll, toast, resetHistory };
     }
 
     // ── 40-sim.js ──
@@ -3692,6 +4152,37 @@
     // Simulation controller: re-traces when the scene changes, runs the
     // playback clock, and fills the readouts, ray log and status bar.
     // ─────────────────────────────────────────────────────────────
+
+    // Turn a trace result into what the readouts say.
+    function classify(result, sensor) {
+      const truth = result.trueDistance;
+      const det = result.detection;
+      const out = { truth, measured: null, error: null, measuredCls: '', errorCls: '' };
+      if (!det) {
+        return { ...out, status: 'No echo', pill: 'status-bad', msg: `Nothing crossed ${sensor.threshold} dB SPL within ${fmt(sensor.maxRange, 1)} m.` };
+      }
+      out.measured = det.distance;
+      const source = det.label || 'an unknown path';
+      if (det.interference) {
+        return {
+          ...out, error: truth == null ? null : det.distance - truth, measuredCls: 'is-bad', errorCls: 'is-bad',
+          status: 'False echo', pill: 'status-bad', msg: `Triggered by ${source} at ${fmt(det.tMs, 2)} ms. That's not a real echo.`,
+        };
+      }
+      if (truth == null) {
+        return { ...out, measuredCls: 'is-warn', status: 'Echo, nothing ahead', pill: 'status-warn', msg: `Echo from ${source}.` };
+      }
+      const err = det.distance - truth;
+      const ok = Math.abs(err) <= Math.max(0.05, 0.03 * truth); // leading-edge detection reads a little short
+      let msg;
+      if (ok) msg = `Echo from ${source}.`;
+      else if (det.label === result.trueTarget) msg = `Echo from ${source}, but from a point off the beam axis that faces the sensor.`;
+      else msg = `First echo came from ${source}.`;
+      return {
+        ...out, error: err, measuredCls: ok ? 'is-good' : 'is-warn', errorCls: ok ? '' : 'is-bad',
+        status: ok ? 'OK' : 'Off target', pill: ok ? 'status-good' : 'status-warn', msg,
+      };
+    }
 
     function createSim({ viewport, echoChart, historyChart }) {
       const $ = (sel) => document.querySelector(sel);
@@ -3728,6 +4219,7 @@
         updateReadouts();
         updateLog();
         updateStatus();
+        scheduleSensors();
       }
 
       // Re-trace soon after a change, but not more often than the trace allows,
@@ -3821,48 +4313,80 @@
           msg.textContent = 'Add a sensor from the left panel.';
           return;
         }
-        const truth = result.trueDistance;
-        const det = result.detection;
-        setReadout('#ro-true', truth == null ? null : fmt(truth, 2));
-        $('#ro-true').title = truth == null ? 'Nothing straight ahead' : `Straight ahead: ${result.trueTarget}`;
-
-        if (!det) {
-          setReadout('#ro-measured', null);
-          setReadout('#ro-error', null);
-          status.textContent = 'No echo';
-          status.className = 'status-pill status-bad';
-          msg.textContent = `Nothing crossed ${s.threshold} dB SPL within ${fmt(s.maxRange, 1)} m.`;
-          return;
-        }
-
-        const measured = det.distance;
-        const source = det.label ? det.label : 'an unknown path';
-        if (det.interference) {
-          setReadout('#ro-measured', fmt(measured, 2), 'is-bad');
-          setReadout('#ro-error', truth == null ? null : (measured > truth ? '+' : '') + fmt(measured - truth, 2), 'is-bad');
-          status.textContent = 'False echo';
-          status.className = 'status-pill status-bad';
-          msg.textContent = `Triggered by ${source} at ${fmt(det.tMs, 2)} ms. That's not a real echo.`;
-          return;
-        }
-        if (truth == null) {
-          setReadout('#ro-measured', fmt(measured, 2), 'is-warn');
-          setReadout('#ro-error', null);
-          status.textContent = 'Echo, nothing ahead';
-          status.className = 'status-pill status-warn';
-          msg.textContent = `Echo from ${source}.`;
-          return;
-        }
-        const err = measured - truth;
-        const ok = Math.abs(err) <= Math.max(0.03, 0.02 * truth);
-        setReadout('#ro-measured', fmt(measured, 2), ok ? 'is-good' : 'is-warn');
-        setReadout('#ro-error', (err > 0 ? '+' : '') + fmt(err, 2), ok ? '' : 'is-bad');
-        status.textContent = ok ? 'OK' : 'Off target';
-        status.className = `status-pill ${ok ? 'status-good' : 'status-warn'}`;
-        if (ok) msg.textContent = `Echo from ${source}.`;
-        else if (det.label === result.trueTarget) msg.textContent = `Echo from ${source}, but from a point off the beam axis that faces the sensor.`;
-        else msg.textContent = `First echo came from ${source}.`;
+        const k = classify(result, s);
+        setReadout('#ro-true', k.truth == null ? null : fmt(k.truth, 2));
+        $('#ro-true').title = k.truth == null ? 'Nothing straight ahead' : `Straight ahead: ${result.trueTarget}`;
+        setReadout('#ro-measured', k.measured == null ? null : fmt(k.measured, 2), k.measuredCls);
+        setReadout('#ro-error', k.error == null ? null : (k.error > 0 ? '+' : '') + fmt(k.error, 2), k.errorCls);
+        status.textContent = k.status;
+        status.className = `status-pill ${k.pill}`;
+        msg.textContent = k.msg;
       }
+
+      // ── Compare sensors ──
+      let sensorsVisible = false;
+      let sensorsTimer = null;
+      function scheduleSensors() {
+        if (!sensorsVisible) return;
+        clearTimeout(sensorsTimer);
+        sensorsTimer = setTimeout(updateSensors, 120);
+      }
+      bus.on('pane', (name) => { sensorsVisible = name === 'sensors'; scheduleSensors(); });
+
+      function updateSensors() {
+        const body = $('#sensors-body');
+        const sensors = store.items.filter((i) => i.type === 'sensor');
+        body.replaceChildren();
+        if (!sensors.length) {
+          const td = body.insertRow().insertCell();
+          td.colSpan = 7;
+          td.className = 'muted';
+          td.textContent = 'No sensors in the scene.';
+          return;
+        }
+        // Other sensors are traced with fewer rays and no slice to stay quick.
+        const st = store.state;
+        const lite = { ...st, sim: { ...st.sim, rays: Math.min(st.sim.rays, 10000), particles: 1 }, display: { ...st.display, slice: false } };
+        for (const s of sensors) {
+          const tr = body.insertRow();
+          tr.dataset.id = s.id;
+          tr.className = s.id === store.activeSensor()?.id ? 'is-detected' : '';
+          const nameCell = tr.insertCell();
+          nameCell.textContent = s.name;
+          if (!s.visible) {
+            const td = tr.insertCell();
+            td.colSpan = 6;
+            td.className = 'muted';
+            td.textContent = 'Hidden (not simulated)';
+            continue;
+          }
+          const r = result && result.sensorId === s.id ? result : composePing(traceSensor(lite, s), pingIndex);
+          const k = classify(r, s);
+          const cells = [
+            [`${fmt(s.freq, s.freq % 1 ? 1 : 0)} kHz`, 'mono'],
+            [k.truth == null ? '—' : `${fmt(k.truth, 2)} m`, 'mono'],
+            [k.measured == null ? '—' : `${fmt(k.measured, 2)} m`, `mono ${k.measuredCls || ''}`],
+            [k.error == null ? '—' : `${k.error > 0 ? '+' : ''}${fmt(k.error, 2)} m`, `mono ${k.errorCls || ''}`],
+          ];
+          for (const [text, cls] of cells) {
+            const td = tr.insertCell();
+            td.textContent = text;
+            td.className = cls;
+          }
+          const statusCell = tr.insertCell();
+          const pill = document.createElement('span');
+          pill.className = `status-pill ${k.pill}`;
+          pill.textContent = k.status;
+          statusCell.appendChild(pill);
+          const why = tr.insertCell();
+          why.className = 'path';
+          why.textContent = k.msg;
+        }
+      }
+      $('#sensors-body').addEventListener('click', (e) => {
+        const tr = e.target.closest('tr[data-id]');
+        if (tr) bus.emit('pick', tr.dataset.id);
+      });
 
       // ── Ray log ──
       function updateLog() {
@@ -3930,8 +4454,32 @@
           : '—';
       }
 
+      function csvEscape(v) {
+        const t = String(v);
+        return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+      }
+
       return {
         retrace,
+        get result() { return result; },
+        echoCsv() {
+          if (!result) return null;
+          const rows = [['time_ms', 'reads_as_m', 'own_echo_db_spl', 'interference_db_spl', 'total_db_spl', 'threshold_db_spl']];
+          for (let b = 0; b < result.nBins; b++) {
+            const t = b * result.dtMs;
+            const i = result.interfDb[b];
+            rows.push([t.toFixed(3), (C_ASSUMED * t / 2000).toFixed(4), result.echoDb[b].toFixed(2),
+              Number.isFinite(i) ? i.toFixed(2) : '', result.totalDb[b].toFixed(2), result.threshold]);
+          }
+          return rows.map((r) => r.join(',')).join('\n');
+        },
+        logCsv() {
+          const rows = [['arrival', 'reads_as', 'level', 'path']];
+          for (const tr of document.querySelectorAll('#ray-log-body tr')) {
+            rows.push([...tr.cells].map((c) => csvEscape(c.textContent)));
+          }
+          return rows.map((r) => r.join(',')).join('\n');
+        },
         togglePlay() {
           if (!result) return;
           if (!playing && t >= result.tMax) setTime(0);
