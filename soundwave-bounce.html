@@ -174,6 +174,11 @@
       .statusbar .grow, .statusbar .muted { display: none; }
     }
 
+    .readouts { grid-column: 2; grid-row: 1; }
+    @media (max-width: 960px) {
+      .readouts { grid-column: 1; grid-row: 2; }
+    }
+
     /* ── components.css ── */
     /* ── Buttons ── */
     .btn {
@@ -428,6 +433,75 @@
       font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 10;
     }
     .toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+    /* ── Presets menu ── */
+    .menu-wrap { position: relative; }
+    .menu {
+      position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 200px;
+      padding: 4px; background: var(--panel-2); border: 1px solid var(--border-strong); border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    .menu button {
+      display: block; width: 100%; text-align: left; padding: 7px 10px; border: 0; border-radius: var(--radius-sm);
+      background: none; color: var(--text); font: inherit; cursor: pointer;
+    }
+    .menu button:hover, .menu button:focus-visible { background: var(--accent-weak); outline: none; }
+
+    /* ── Play / pause ── */
+    .btn-play .icon-pause { display: none; }
+    .btn-play.is-playing .icon-play { display: none; }
+    .btn-play.is-playing .icon-pause { display: inline; }
+
+    /* ── Outliner extras ── */
+    .outliner-item.is-hidden { color: var(--text-faint); }
+    .outliner-item .name { overflow: hidden; text-overflow: ellipsis; }
+    .tag {
+      font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--accent); border: 1px solid rgba(63, 182, 255, 0.4); border-radius: 999px; padding: 0 5px; flex: none;
+    }
+    .outliner-empty { padding: 6px 4px; color: var(--text-faint); font-size: 12px; }
+
+    .inspector-empty { padding: 16px 12px; }
+    .inspector-empty p { margin: 0 0 6px; }
+
+    /* ── Dock panes ── */
+    .dock-pane { grid-column: 1; grid-row: 1; position: relative; min-height: 0; display: flex; }
+    .dock-pane > .chart-wrap { flex: 1; }
+    .dock-pane-scroll { overflow: auto; display: block; }
+    .chart-wrap canvas { touch-action: none; cursor: ew-resize; }
+    .sw-true { background: repeating-linear-gradient(90deg, var(--good) 0 4px, transparent 4px 7px); }
+
+    .ray-log { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .ray-log th {
+      position: sticky; top: 0; background: var(--panel); text-align: left; font-weight: 600;
+      color: var(--text-muted); padding: 6px 10px; border-bottom: 1px solid var(--border);
+    }
+    .ray-log td { padding: 4px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .ray-log td.mono { font-size: 11.5px; }
+    .ray-log td.path { white-space: normal; color: var(--text-muted); }
+    .ray-log tr.is-detected td { background: var(--accent-weak); }
+    .ray-log tr.is-below td { opacity: 0.55; }
+
+    .readout-value.is-good { color: var(--good); }
+    .status-good { background: rgba(62, 207, 142, 0.15); color: var(--good); }
+    .status-warn { background: rgba(245, 196, 81, 0.15); color: var(--warn); }
+
+    /* ── Help dialog ── */
+    .help {
+      max-width: 560px; width: calc(100% - 32px); padding: 20px 24px;
+      background: var(--panel); color: var(--text); border: 1px solid var(--border-strong); border-radius: 10px;
+    }
+    .help::backdrop { background: rgba(0, 0, 0, 0.5); }
+    .help h2 { margin: 0 0 8px; font-size: 16px; }
+    .help h3 { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); }
+    .help p, .help li { line-height: 1.5; }
+    .help ul { padding-left: 18px; margin: 0; }
+    .help form { margin-top: 16px; text-align: right; }
+    .keys { margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 16px; }
+    .keys div { display: flex; gap: 10px; }
+    .keys dt { font-family: var(--mono); font-size: 11.5px; color: var(--accent); min-width: 64px; }
+    .keys dd { margin: 0; color: var(--text-muted); }
+    @media (max-width: 560px) { .keys { grid-template-columns: 1fr; } }
   </style>
   <script type="importmap">
     {
@@ -448,48 +522,52 @@
           <path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 11v2" />
         </svg>
         <span class="brand-name">Soundwave Bounce</span>
-        <span class="badge badge-preview" title="Buttons and values are placeholders">UI preview</span>
       </div>
 
       <div class="toolbar-group" role="group" aria-label="File">
-        <button class="btn btn-ghost" title="New scene">New</button>
-        <button class="btn btn-ghost" title="Open scene (.json)">Open</button>
-        <button class="btn btn-ghost" title="Save scene (.json)">Save</button>
-        <button class="btn btn-ghost" title="Scene presets">Presets ▾</button>
+        <button class="btn btn-ghost" id="btn-new" title="New empty scene">New</button>
+        <button class="btn btn-ghost" id="btn-open" title="Open scene (.json)">Open</button>
+        <button class="btn btn-ghost" id="btn-save" title="Save scene (.json)">Save</button>
+        <div class="menu-wrap">
+          <button class="btn btn-ghost" id="btn-presets" title="Example scenes" aria-haspopup="menu" aria-expanded="false">Presets ▾</button>
+          <div class="menu" id="presets-menu" role="menu" hidden></div>
+        </div>
+        <input type="file" id="file-input" accept=".json,application/json" hidden>
       </div>
 
       <div class="toolbar-group transport" role="group" aria-label="Simulation">
-        <button class="btn btn-icon" title="Reset">
+        <button class="btn btn-icon" id="btn-reset" title="Reset to t = 0">
           <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.7M4 4v5h5" /></svg>
         </button>
-        <button class="btn btn-icon" title="Step back">
+        <button class="btn btn-icon" id="btn-back" title="Step back">
           <svg viewBox="0 0 24 24"><path d="M18 6 10 12l8 6zM7 6v12" /></svg>
         </button>
-        <button class="btn btn-primary btn-play" title="Fire ping / play">
-          <svg viewBox="0 0 24 24"><path d="M7 5v14l12-7z" /></svg>
+        <button class="btn btn-primary btn-play" id="btn-play" title="Fire a ping (Space)">
+          <svg class="icon-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7z" /></svg>
+          <svg class="icon-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>
           <span>Ping</span>
         </button>
-        <button class="btn btn-icon" title="Step forward">
+        <button class="btn btn-icon" id="btn-fwd" title="Step forward">
           <svg viewBox="0 0 24 24"><path d="m6 6 8 6-8 6zM17 6v12" /></svg>
         </button>
-        <label class="select-inline" title="Playback speed">
+        <label class="select-inline" title="Playback speed (real time is far too fast to see)">
           <span>Speed</span>
-          <select>
-            <option>1/1000×</option>
-            <option selected>1/200×</option>
-            <option>1/50×</option>
-            <option>1/10×</option>
+          <select id="sel-speed">
+            <option value="0.001">1/1000×</option>
+            <option value="0.005" selected>1/200×</option>
+            <option value="0.02">1/50×</option>
+            <option value="0.1">1/10×</option>
           </select>
         </label>
         <label class="switch" title="Repeat pings continuously">
-          <input type="checkbox">
+          <input type="checkbox" id="chk-loop">
           <span class="switch-track"></span>
           <span>Loop</span>
         </label>
       </div>
 
-      <div class="toolbar-group" role="group" aria-label="View">
-        <button class="btn btn-ghost" title="Help">?</button>
+      <div class="toolbar-group" role="group" aria-label="Help">
+        <button class="btn btn-ghost" id="btn-help" title="Help">?</button>
       </div>
     </header>
 
@@ -498,27 +576,27 @@
       <section class="panel-section">
         <h2 class="panel-title">Add</h2>
         <div class="add-grid">
-          <button class="add-tile" data-add="wall">
+          <button class="add-tile" data-add="wall" title="Add a wall">
             <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4zM4 10h16M4 14.5h16M10 5v5M15 10v4.5M8 14.5V19M16 14.5V19" /></svg>
             <span>Wall</span>
           </button>
-          <button class="add-tile" data-add="block">
+          <button class="add-tile" data-add="block" title="Add a block">
             <svg viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12 4 7.5M12 12v9" /></svg>
             <span>Block</span>
           </button>
-          <button class="add-tile" data-add="pipe">
+          <button class="add-tile" data-add="pipe" title="Add a pipe">
             <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="5" ry="2.5" /><path d="M7 5.5v13c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-13" /></svg>
             <span>Pipe</span>
           </button>
-          <button class="add-tile" data-add="sphere">
+          <button class="add-tile" data-add="sphere" title="Add a sphere">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /><ellipse cx="12" cy="12" rx="8" ry="3" /></svg>
             <span>Sphere</span>
           </button>
-          <button class="add-tile" data-add="sensor">
+          <button class="add-tile" data-add="sensor" title="Add an ultrasonic sensor">
             <svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="1.5" /><circle cx="8" cy="12" r="2.2" /><circle cx="16" cy="12" r="2.2" /></svg>
             <span>Sensor</span>
           </button>
-          <button class="add-tile add-tile-source" data-add="source">
+          <button class="add-tile add-tile-source" data-add="source" title="Add an interfering source">
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.5" /><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 5a10 10 0 0 0 0 14M19 5a10 10 0 0 1 0 14" /></svg>
             <span>Source</span>
           </button>
@@ -528,51 +606,19 @@
       <section class="panel-section panel-grow">
         <h2 class="panel-title">
           Scene
-          <span class="count">7</span>
+          <span class="count" id="scene-count">0</span>
         </h2>
-        <ul class="outliner" role="listbox" aria-label="Scene objects">
-          <li class="outliner-group">Sensors</li>
-          <li class="outliner-item is-selected" data-id="sensor1" data-kind="sensor" role="option">
-            <span class="dot dot-sensor"></span>Sensor A · 58 kHz
-            <button class="eye" title="Hide">◉</button>
-          </li>
-          <li class="outliner-group">Interference sources</li>
-          <li class="outliner-item" data-id="source1" data-kind="source" role="option">
-            <span class="dot dot-source"></span>Neighbour sensor · 57 kHz
-            <button class="eye" title="Hide">◉</button>
-          </li>
-          <li class="outliner-item" data-id="source2" data-kind="source" role="option">
-            <span class="dot dot-source"></span>Air leak · 40–80 kHz
-            <button class="eye" title="Hide">◉</button>
-          </li>
-          <li class="outliner-group">Objects</li>
-          <li class="outliner-item" data-id="wall1" data-kind="object" role="option">
-            <span class="dot dot-object"></span>Wall · concrete
-            <button class="eye" title="Hide">◉</button>
-          </li>
-          <li class="outliner-item" data-id="block1" data-kind="object" role="option">
-            <span class="dot dot-object"></span>Block · wood
-            <button class="eye" title="Hide">◉</button>
-          </li>
-          <li class="outliner-item" data-id="pipe1" data-kind="object" role="option">
-            <span class="dot dot-object"></span>Pipe · steel
-            <button class="eye" title="Hide">◉</button>
-          </li>
-          <li class="outliner-item" data-id="floor" data-kind="object" role="option">
-            <span class="dot dot-object"></span>Floor · concrete
-            <button class="eye" title="Hide">◉</button>
-          </li>
-        </ul>
+        <ul class="outliner" id="outliner" role="listbox" aria-label="Scene objects"></ul>
       </section>
 
-      <section class="panel-section">
+      <section class="panel-section" data-scope="display">
         <h2 class="panel-title">Display</h2>
-        <label class="check"><input type="checkbox" checked> Wavefront particles</label>
-        <label class="check"><input type="checkbox" checked> Beam cone</label>
-        <label class="check"><input type="checkbox"> All ray paths</label>
-        <label class="check"><input type="checkbox" checked> Rays that reach sensor</label>
-        <label class="check"><input type="checkbox"> Intensity slice plane</label>
-        <label class="check"><input type="checkbox" checked> Grid &amp; axes</label>
+        <label class="check"><input type="checkbox" data-bind="particles"> Wavefront particles</label>
+        <label class="check"><input type="checkbox" data-bind="cone"> Beam cone</label>
+        <label class="check"><input type="checkbox" data-bind="allRays"> All ray paths</label>
+        <label class="check"><input type="checkbox" data-bind="rxRays"> Rays that reach sensor</label>
+        <label class="check"><input type="checkbox" data-bind="labels"> Labels</label>
+        <label class="check"><input type="checkbox" data-bind="grid"> Grid &amp; axes</label>
       </section>
     </aside>
 
@@ -581,41 +627,41 @@
       <div id="viewport" class="viewport" aria-label="3D view"></div>
 
       <div class="vp-overlay vp-tools" role="toolbar" aria-label="Transform tools">
-        <button class="btn btn-icon is-active" title="Select (Q)">
+        <button class="btn btn-icon is-active" data-tool="select" title="Select (Q)">
           <svg viewBox="0 0 24 24"><path d="m5 3 14 8-6 1.5L10 19z" /></svg>
         </button>
-        <button class="btn btn-icon" title="Move (W)">
+        <button class="btn btn-icon" data-tool="move" title="Move (W)">
           <svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" /></svg>
         </button>
-        <button class="btn btn-icon" title="Rotate (E)">
+        <button class="btn btn-icon" data-tool="rotate" title="Rotate / aim (E)">
           <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5" /></svg>
         </button>
-        <button class="btn btn-icon" title="Scale (R)">
+        <button class="btn btn-icon" data-tool="scale" title="Resize (R)">
           <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 13h7v7h-7zM11 11l2 2" /></svg>
         </button>
         <span class="vp-sep"></span>
-        <button class="btn btn-icon" title="Snap to grid">
+        <button class="btn btn-icon" id="btn-snap" title="Snap to 0.1 m / 15° (S)">
           <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4zM4 9.3h16M4 14.6h16M9.3 4v16M14.6 4v16" /></svg>
         </button>
       </div>
 
       <div class="vp-overlay vp-views" role="group" aria-label="Camera">
-        <button class="btn btn-chip is-active">Persp</button>
-        <button class="btn btn-chip">Top</button>
-        <button class="btn btn-chip">Front</button>
-        <button class="btn btn-chip">Side</button>
-        <button class="btn btn-chip" title="Look from the sensor">Sensor</button>
+        <button class="btn btn-chip is-active" data-view="persp">Persp</button>
+        <button class="btn btn-chip" data-view="top">Top</button>
+        <button class="btn btn-chip" data-view="front">Front</button>
+        <button class="btn btn-chip" data-view="side">Side</button>
+        <button class="btn btn-chip" data-view="sensor" title="Look from the active sensor">Sensor</button>
       </div>
 
       <div class="vp-overlay vp-legend" aria-label="Intensity legend">
-        <span class="legend-label">Intensity</span>
+        <span class="legend-label" title="Level relative to the transmitted level at 1 m">Intensity</span>
         <div class="legend-bar"></div>
         <div class="legend-ticks"><span>0 dB</span><span>−30</span><span>−60</span><span>−90</span></div>
       </div>
 
       <div class="vp-overlay vp-time">
-        <span class="mono">t = <b>14.62</b> ms</span>
-        <span class="mono muted">pulse at 5.02 m</span>
+        <span class="mono">t = <b id="vp-t">0.00</b> ms</span>
+        <span class="mono muted" id="vp-dist">pulse at 0.00 m</span>
       </div>
     </main>
 
@@ -627,32 +673,40 @@
         <button class="tab" role="tab" data-tab="sim">Simulation</button>
       </div>
 
-      <!-- Properties tab: one block per object kind -->
-      <div class="tab-page is-active" data-page="props">
+      <!-- Properties tab: one block per item kind -->
+      <div class="tab-page is-active" data-page="props" data-scope="item">
+
+        <div class="inspector inspector-empty" data-kind="none" hidden>
+          <p>Nothing selected.</p>
+          <p class="muted">Click an object in the 3D view or the Scene list, or add one from the left panel.</p>
+        </div>
 
         <!-- Sensor -->
-        <div class="inspector" data-kind="sensor">
+        <div class="inspector" data-kind="sensor" hidden>
           <div class="inspector-head">
             <span class="dot dot-sensor"></span>
-            <input class="name-input" value="Sensor A">
-            <button class="btn btn-icon btn-danger" title="Delete">
+            <input class="name-input" data-bind="name" aria-label="Name">
+            <button class="btn btn-icon" data-action="duplicate" title="Duplicate (Ctrl+D)">
+              <svg viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12" /></svg>
+            </button>
+            <button class="btn btn-icon btn-danger" data-action="delete" title="Delete (Del)">
               <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" /></svg>
             </button>
           </div>
 
           <details class="group" open>
             <summary>Transform</summary>
-            <div class="field-row"><label>Position</label>
+            <div class="field-row"><label>Position (m)</label>
               <div class="vec3">
-                <span class="axis x">X</span><input type="number" value="-3.00" step="0.05">
-                <span class="axis y">Y</span><input type="number" value="0.50" step="0.05">
-                <span class="axis z">Z</span><input type="number" value="0.00" step="0.05">
+                <span class="axis x">X</span><input type="number" data-bind="pos.x" step="0.05">
+                <span class="axis y">Y</span><input type="number" data-bind="pos.y" step="0.05">
+                <span class="axis z">Z</span><input type="number" data-bind="pos.z" step="0.05">
               </div>
             </div>
             <div class="field-row"><label>Aim</label>
               <div class="vec2">
-                <span class="axis">Yaw</span><input type="number" value="0" step="1"><span class="unit">°</span>
-                <span class="axis">Pitch</span><input type="number" value="0" step="1"><span class="unit">°</span>
+                <span class="axis">Yaw</span><input type="number" data-bind="yaw" step="1"><span class="unit">°</span>
+                <span class="axis">Pitch</span><input type="number" data-bind="pitch" step="1" min="-90" max="90"><span class="unit">°</span>
               </div>
             </div>
           </details>
@@ -660,85 +714,90 @@
           <details class="group" open>
             <summary>Transducer</summary>
             <div class="field-row"><label>Model</label>
-              <select>
-                <option selected>Generic 58 kHz</option>
-                <option>HC-SR04 (40 kHz)</option>
-                <option>MaxBotix-style (42 kHz, wide)</option>
-                <option>Custom…</option>
-              </select>
+              <select data-bind="model" data-options="sensorModels"></select>
             </div>
             <div class="field-row"><label>Frequency</label>
-              <div class="num-unit"><input type="number" value="58" step="0.5"><span class="unit">kHz</span></div>
+              <div class="num-unit"><input type="number" data-bind="freq" step="0.5" min="10" max="500"><span class="unit">kHz</span></div>
             </div>
             <div class="field-row"><label>Bandwidth</label>
-              <div class="num-unit"><input type="number" value="4" step="0.5"><span class="unit">kHz</span></div>
+              <div class="num-unit"><input type="number" data-bind="bw" step="0.5" min="0.5" max="50"><span class="unit">kHz</span></div>
             </div>
             <div class="field-row"><label>Beam angle</label>
-              <div class="slider"><input type="range" min="5" max="60" value="18"><output>18°</output></div>
+              <div class="slider"><input type="range" data-bind="halfAngle" min="3" max="60" step="1"><output data-out="halfAngle" data-unit="°"></output></div>
             </div>
             <div class="field-row"><label>Tx level</label>
-              <div class="slider"><input type="range" min="90" max="130" value="115"><output>115 dB SPL</output></div>
+              <div class="slider"><input type="range" data-bind="txLevel" min="90" max="130" step="1"><output data-out="txLevel" data-unit=" dB SPL"></output></div>
             </div>
             <div class="field-row"><label>Pulse</label>
-              <div class="num-unit"><input type="number" value="8" step="1"><span class="unit">cycles</span></div>
+              <div class="num-unit"><input type="number" data-bind="cycles" step="1" min="1" max="64"><span class="unit">cycles</span></div>
             </div>
-            <div class="field-row"><label>Ping interval</label>
-              <div class="num-unit"><input type="number" value="60" step="5"><span class="unit">ms</span></div>
-            </div>
+            <p class="hint">Beam angle is the half-angle where the level is −6 dB.</p>
           </details>
 
           <details class="group" open>
             <summary>Receiver</summary>
             <div class="field-row"><label>Threshold</label>
-              <div class="slider"><input type="range" min="-100" max="-20" value="-62"><output>−62 dB</output></div>
+              <div class="slider"><input type="range" data-bind="threshold" min="20" max="110" step="1"><output data-out="threshold" data-unit=" dB SPL"></output></div>
             </div>
             <div class="field-row"><label>Blanking</label>
-              <div class="num-unit"><input type="number" value="1.2" step="0.1"><span class="unit">ms</span></div>
+              <div class="num-unit"><input type="number" data-bind="blanking" step="0.1" min="0.1" max="10"><span class="unit">ms</span></div>
             </div>
             <div class="field-row"><label>Max range</label>
-              <div class="num-unit"><input type="number" value="6.0" step="0.5"><span class="unit">m</span></div>
+              <div class="num-unit"><input type="number" data-bind="maxRange" step="0.5" min="0.5" max="30"><span class="unit">m</span></div>
+            </div>
+            <div class="field-row"><label>Ping interval</label>
+              <div class="num-unit"><input type="number" data-bind="interval" step="5" min="5" max="1000"><span class="unit">ms</span></div>
             </div>
           </details>
         </div>
 
-        <!-- Object (wall / block / pipe / sphere) -->
+        <!-- Object (wall / block / pipe / sphere / floor) -->
         <div class="inspector" data-kind="object" hidden>
           <div class="inspector-head">
             <span class="dot dot-object"></span>
-            <input class="name-input" value="Wall">
-            <button class="btn btn-icon btn-danger" title="Delete">
+            <input class="name-input" data-bind="name" aria-label="Name">
+            <button class="btn btn-icon" data-action="duplicate" data-hide-for="floor" title="Duplicate (Ctrl+D)">
+              <svg viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12" /></svg>
+            </button>
+            <button class="btn btn-icon btn-danger" data-action="delete" data-hide-for="floor" title="Delete (Del)">
               <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" /></svg>
             </button>
           </div>
 
-          <details class="group" open>
+          <details class="group" open data-hide-for="floor">
             <summary>Shape</summary>
-            <div class="segmented" role="radiogroup">
-              <button class="is-active">Wall</button><button>Block</button><button>Pipe</button><button>Sphere</button>
+            <div class="segmented" data-bind="type" role="radiogroup">
+              <button data-value="wall">Wall</button><button data-value="block">Block</button><button data-value="pipe">Pipe</button><button data-value="sphere">Sphere</button>
             </div>
-            <div class="field-row"><label>Size</label>
+            <div class="field-row" data-show-for="wall block"><label>Size (m)</label>
               <div class="vec3">
-                <span class="axis">W</span><input type="number" value="0.10" step="0.05">
-                <span class="axis">H</span><input type="number" value="2.00" step="0.05">
-                <span class="axis">D</span><input type="number" value="4.00" step="0.05">
+                <span class="axis">W</span><input type="number" data-bind="size.x" step="0.05" min="0.01">
+                <span class="axis">H</span><input type="number" data-bind="size.y" step="0.05" min="0.01">
+                <span class="axis">D</span><input type="number" data-bind="size.z" step="0.05" min="0.01">
               </div>
+            </div>
+            <div class="field-row" data-show-for="pipe sphere"><label>Radius</label>
+              <div class="num-unit"><input type="number" data-bind="radius" step="0.01" min="0.005"><span class="unit">m</span></div>
+            </div>
+            <div class="field-row" data-show-for="pipe"><label>Length</label>
+              <div class="num-unit"><input type="number" data-bind="length" step="0.1" min="0.01"><span class="unit">m</span></div>
             </div>
           </details>
 
-          <details class="group" open>
+          <details class="group" open data-hide-for="floor">
             <summary>Transform</summary>
-            <div class="field-row"><label>Position</label>
+            <div class="field-row"><label>Position (m)</label>
               <div class="vec3">
-                <span class="axis x">X</span><input type="number" value="2.00" step="0.05">
-                <span class="axis y">Y</span><input type="number" value="1.00" step="0.05">
-                <span class="axis z">Z</span><input type="number" value="0.00" step="0.05">
+                <span class="axis x">X</span><input type="number" data-bind="pos.x" step="0.05">
+                <span class="axis y">Y</span><input type="number" data-bind="pos.y" step="0.05">
+                <span class="axis z">Z</span><input type="number" data-bind="pos.z" step="0.05">
               </div>
             </div>
-            <div class="field-row"><label>Rotation</label>
+            <div class="field-row"><label>Rotation (°)</label>
               <div class="vec3">
-                <span class="axis x">X</span><input type="number" value="0" step="1">
-                <span class="axis y">Y</span><input type="number" value="20" step="1">
-                <span class="axis z">Z</span><input type="number" value="0" step="1">
+                <span class="axis x">X</span><input type="number" data-bind="rot.x" step="5">
+                <span class="axis y">Y</span><input type="number" data-bind="rot.y" step="5">
+                <span class="axis z">Z</span><input type="number" data-bind="rot.z" step="5">
               </div>
             </div>
           </details>
@@ -746,24 +805,16 @@
           <details class="group" open>
             <summary>Surface</summary>
             <div class="field-row"><label>Material</label>
-              <select>
-                <option selected>Concrete (smooth)</option>
-                <option>Brick</option>
-                <option>Wood</option>
-                <option>Steel</option>
-                <option>Glass</option>
-                <option>Acoustic foam</option>
-                <option>Fabric / curtain</option>
-                <option>Custom…</option>
-              </select>
+              <select data-bind="material" data-options="materials"></select>
             </div>
             <div class="field-row"><label>Absorption</label>
-              <div class="slider"><input type="range" min="0" max="100" value="2"><output>0.02</output></div>
+              <div class="slider"><input type="range" data-bind="absorption" min="0" max="1" step="0.01"><output data-out="absorption" data-dec="2"></output></div>
             </div>
             <div class="field-row"><label>Scattering</label>
-              <div class="slider"><input type="range" min="0" max="100" value="10"><output>0.10</output></div>
+              <div class="slider"><input type="range" data-bind="scattering" min="0" max="1" step="0.01"><output data-out="scattering" data-dec="2"></output></div>
             </div>
-            <p class="hint">Scattering 0 = mirror-like bounce, 1 = fully diffuse.</p>
+            <p class="hint">Absorption: share of energy lost at each bounce. Scattering: 0 = mirror-like bounce, 1 = fully diffuse.</p>
+            <p class="hint" data-show-for="floor">Hide the floor (eye icon in the Scene list) to stop it reflecting.</p>
           </details>
         </div>
 
@@ -771,25 +822,28 @@
         <div class="inspector" data-kind="source" hidden>
           <div class="inspector-head">
             <span class="dot dot-source"></span>
-            <input class="name-input" value="Neighbour sensor">
-            <button class="btn btn-icon btn-danger" title="Delete">
+            <input class="name-input" data-bind="name" aria-label="Name">
+            <button class="btn btn-icon" data-action="duplicate" title="Duplicate (Ctrl+D)">
+              <svg viewBox="0 0 24 24"><path d="M8 8h12v12H8zM4 16V4h12" /></svg>
+            </button>
+            <button class="btn btn-icon btn-danger" data-action="delete" title="Delete (Del)">
               <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13" /></svg>
             </button>
           </div>
 
           <details class="group" open>
             <summary>Transform</summary>
-            <div class="field-row"><label>Position</label>
+            <div class="field-row"><label>Position (m)</label>
               <div class="vec3">
-                <span class="axis x">X</span><input type="number" value="-1.00" step="0.05">
-                <span class="axis y">Y</span><input type="number" value="1.20" step="0.05">
-                <span class="axis z">Z</span><input type="number" value="3.00" step="0.05">
+                <span class="axis x">X</span><input type="number" data-bind="pos.x" step="0.05">
+                <span class="axis y">Y</span><input type="number" data-bind="pos.y" step="0.05">
+                <span class="axis z">Z</span><input type="number" data-bind="pos.z" step="0.05">
               </div>
             </div>
             <div class="field-row"><label>Aim</label>
               <div class="vec2">
-                <span class="axis">Yaw</span><input type="number" value="-60" step="1"><span class="unit">°</span>
-                <span class="axis">Pitch</span><input type="number" value="0" step="1"><span class="unit">°</span>
+                <span class="axis">Yaw</span><input type="number" data-bind="yaw" step="1"><span class="unit">°</span>
+                <span class="axis">Pitch</span><input type="number" data-bind="pitch" step="1" min="-90" max="90"><span class="unit">°</span>
               </div>
             </div>
           </details>
@@ -797,110 +851,113 @@
           <details class="group" open>
             <summary>Emission</summary>
             <div class="field-row"><label>Type</label>
-              <select>
-                <option selected>Other ultrasonic sensor</option>
-                <option>Broadband hiss (air leak)</option>
-                <option>Continuous tone</option>
+              <select data-bind="emission">
+                <option value="sensor">Other ultrasonic sensor</option>
+                <option value="hiss">Broadband hiss (air leak)</option>
+                <option value="tone">Continuous tone</option>
               </select>
             </div>
             <div class="field-row"><label>Frequency</label>
-              <div class="num-unit"><input type="number" value="57" step="0.5"><span class="unit">kHz</span></div>
+              <div class="num-unit"><input type="number" data-bind="freq" step="0.5" min="10" max="500"><span class="unit">kHz</span></div>
             </div>
             <div class="field-row"><label>Level</label>
-              <div class="slider"><input type="range" min="60" max="130" value="112"><output>112 dB SPL</output></div>
+              <div class="slider"><input type="range" data-bind="level" min="40" max="130" step="1"><output data-out="level" data-unit=" dB SPL"></output></div>
             </div>
             <div class="field-row"><label>Directivity</label>
-              <div class="slider"><input type="range" min="5" max="180" value="20"><output>20°</output></div>
+              <div class="slider"><input type="range" data-bind="directivity" min="5" max="180" step="1"><output data-out="directivity" data-unit="°"></output></div>
             </div>
             <div class="field-row"><label>Mode</label>
-              <div class="segmented" role="radiogroup">
-                <button class="is-active">Pulsed</button><button>Continuous</button>
+              <div class="segmented" data-bind="mode" role="radiogroup">
+                <button data-value="pulsed">Pulsed</button><button data-value="continuous">Continuous</button>
               </div>
             </div>
             <div class="field-row"><label>Period</label>
-              <div class="num-unit"><input type="number" value="55" step="1"><span class="unit">ms</span></div>
+              <div class="num-unit"><input type="number" data-bind="period" step="1" min="1"><span class="unit">ms</span></div>
             </div>
             <div class="field-row"><label>Start offset</label>
-              <div class="num-unit"><input type="number" value="3.0" step="0.5"><span class="unit">ms</span></div>
+              <div class="num-unit"><input type="number" data-bind="offset" step="0.5" min="0"><span class="unit">ms</span></div>
             </div>
           </details>
 
-          <div class="callout">
-            <b>In band:</b> 57 kHz lies within Sensor A's 58 ± 2 kHz passband. This source can trigger false echoes.
-          </div>
+          <div class="callout" id="source-band"></div>
         </div>
       </div>
 
       <!-- Environment tab -->
-      <div class="tab-page" data-page="env" hidden>
+      <div class="tab-page" data-page="env" data-scope="env" hidden>
         <details class="group" open>
           <summary>Air</summary>
           <div class="field-row"><label>Temperature</label>
-            <div class="slider"><input type="range" min="-20" max="50" value="20"><output>20 °C</output></div>
+            <div class="slider"><input type="range" data-bind="temperature" min="-20" max="50" step="1"><output data-out="temperature" data-unit=" °C"></output></div>
           </div>
           <div class="field-row"><label>Humidity</label>
-            <div class="slider"><input type="range" min="0" max="100" value="50"><output>50 %</output></div>
+            <div class="slider"><input type="range" data-bind="humidity" min="0" max="100" step="1"><output data-out="humidity" data-unit=" %"></output></div>
           </div>
           <div class="field-row"><label>Pressure</label>
-            <div class="num-unit"><input type="number" value="101.3" step="0.1"><span class="unit">kPa</span></div>
+            <div class="num-unit"><input type="number" data-bind="pressure" step="0.1" min="50" max="110"><span class="unit">kPa</span></div>
           </div>
         </details>
         <details class="group" open>
-          <summary>Derived</summary>
+          <summary>Derived <span class="muted" id="env-at"></span></summary>
           <dl class="readout-list">
-            <div><dt>Speed of sound</dt><dd class="mono">343.4 m/s</dd></div>
-            <div><dt>Wavelength @ 58 kHz</dt><dd class="mono">5.92 mm</dd></div>
-            <div><dt>Air absorption</dt><dd class="mono">1.9 dB/m</dd></div>
+            <div><dt>Speed of sound</dt><dd class="mono" id="env-c">—</dd></div>
+            <div><dt>Sensor assumes</dt><dd class="mono" id="env-c-assumed">—</dd></div>
+            <div><dt>Wavelength</dt><dd class="mono" id="env-lambda">—</dd></div>
+            <div><dt>Air absorption</dt><dd class="mono" id="env-alpha">—</dd></div>
           </dl>
+          <p class="hint">Sensors convert echo time to distance with the speed of sound at 20 °C, so other temperatures show up as a distance error.</p>
         </details>
         <details class="group" open>
           <summary>Room</summary>
-          <label class="check"><input type="checkbox" checked> Floor is reflective</label>
-          <label class="check"><input type="checkbox"> Enclose in room box</label>
-          <div class="field-row"><label>Room size</label>
+          <label class="check"><input type="checkbox" data-bind="room.enclosed"> Enclose in room (concrete walls + ceiling)</label>
+          <div class="field-row"><label>Room size (m)</label>
             <div class="vec3">
-              <span class="axis">W</span><input type="number" value="10" step="0.5">
-              <span class="axis">H</span><input type="number" value="3" step="0.5">
-              <span class="axis">D</span><input type="number" value="10" step="0.5">
+              <span class="axis">W</span><input type="number" data-bind="room.w" step="0.5" min="1" max="50">
+              <span class="axis">H</span><input type="number" data-bind="room.h" step="0.5" min="1" max="20">
+              <span class="axis">D</span><input type="number" data-bind="room.d" step="0.5" min="1" max="50">
             </div>
           </div>
+          <p class="hint">The floor is always this size, even when the room isn't enclosed.</p>
         </details>
       </div>
 
       <!-- Simulation tab -->
-      <div class="tab-page" data-page="sim" hidden>
+      <div class="tab-page" data-page="sim" data-scope="sim" hidden>
         <details class="group" open>
           <summary>Ray tracing</summary>
           <div class="field-row"><label>Rays per ping</label>
-            <select>
-              <option>2 000</option>
-              <option selected>10 000</option>
-              <option>50 000</option>
-              <option>200 000</option>
+            <select data-bind="rays" data-type="number">
+              <option value="5000">5 000</option>
+              <option value="10000">10 000</option>
+              <option value="20000">20 000</option>
+              <option value="50000">50 000</option>
+              <option value="100000">100 000</option>
+              <option value="200000">200 000</option>
             </select>
           </div>
           <div class="field-row"><label>Max bounces</label>
-            <div class="slider"><input type="range" min="1" max="20" value="6"><output>6</output></div>
+            <div class="slider"><input type="range" data-bind="maxBounces" min="1" max="20" step="1"><output data-out="maxBounces"></output></div>
           </div>
           <div class="field-row"><label>Energy cutoff</label>
-            <div class="slider"><input type="range" min="-120" max="-40" value="-90"><output>−90 dB</output></div>
+            <div class="slider"><input type="range" data-bind="cutoffDb" min="-120" max="-40" step="5"><output data-out="cutoffDb" data-unit=" dB"></output></div>
           </div>
           <div class="field-row"><label>Receiver radius</label>
-            <div class="num-unit"><input type="number" value="0.05" step="0.01"><span class="unit">m</span></div>
+            <div class="num-unit"><input type="number" data-bind="rxRadius" step="0.005" min="0.001" max="0.5"><span class="unit">m</span></div>
           </div>
+          <p class="hint">Last trace: <span id="trace-info">—</span>. Small curved targets (thin pipes) need more rays for an accurate echo level.</p>
         </details>
         <details class="group" open>
           <summary>Visualization</summary>
           <div class="field-row"><label>Particles shown</label>
-            <select>
-              <option>1 000</option>
-              <option selected>5 000</option>
-              <option>20 000</option>
+            <select data-bind="particles" data-type="number">
+              <option value="1000">1 000</option>
+              <option value="5000">5 000</option>
+              <option value="20000">20 000</option>
             </select>
           </div>
           <div class="field-row"><label>Colour by</label>
-            <div class="segmented" role="radiogroup">
-              <button class="is-active">Intensity</button><button>Bounce #</button><button>Source</button>
+            <div class="segmented" data-bind="colorBy" role="radiogroup">
+              <button data-value="intensity">Intensity</button><button data-value="bounce">Bounce #</button><button data-value="source">Source</button>
             </div>
           </div>
         </details>
@@ -911,59 +968,99 @@
     <section class="dock" aria-label="Echo analysis">
       <div class="dock-head">
         <div class="tabs tabs-small" role="tablist">
-          <button class="tab is-active" role="tab">Echo (A-scan)</button>
-          <button class="tab" role="tab">Ray log</button>
-          <button class="tab" role="tab">Distance history</button>
+          <button class="tab is-active" role="tab" data-pane="echo">Echo (A-scan)</button>
+          <button class="tab" role="tab" data-pane="log">Ray log</button>
+          <button class="tab" role="tab" data-pane="history">Distance history</button>
         </div>
         <div class="dock-legend">
-          <span><i class="sw sw-echo"></i>Echo</span>
-          <span><i class="sw sw-interf"></i>Interference</span>
+          <span><i class="sw sw-echo"></i>Received</span>
           <span><i class="sw sw-thresh"></i>Threshold</span>
+          <span><i class="sw sw-true"></i>True distance</span>
         </div>
       </div>
 
       <div class="dock-body">
-        <div class="chart-wrap">
-          <canvas id="echo-chart"></canvas>
+        <div class="dock-pane" data-pane="echo">
+          <div class="chart-wrap">
+            <canvas id="echo-chart" aria-label="Received signal level over time"></canvas>
+          </div>
+        </div>
+        <div class="dock-pane dock-pane-scroll" data-pane="log" hidden>
+          <table class="ray-log">
+            <thead><tr><th>Arrival</th><th>Reads as</th><th>Level ▾</th><th>Path</th></tr></thead>
+            <tbody id="ray-log-body"></tbody>
+          </table>
+        </div>
+        <div class="dock-pane" data-pane="history" hidden>
+          <div class="chart-wrap">
+            <canvas id="history-chart" aria-label="Measured distance per ping"></canvas>
+          </div>
         </div>
 
         <div class="readouts">
           <div class="readout">
             <span class="readout-label">True distance</span>
-            <span class="readout-value mono">4.87 <small>m</small></span>
+            <span class="readout-value mono" id="ro-true">—</span>
           </div>
           <div class="readout">
             <span class="readout-label">Measured</span>
-            <span class="readout-value mono is-warn">1.94 <small>m</small></span>
+            <span class="readout-value mono" id="ro-measured">—</span>
           </div>
           <div class="readout">
             <span class="readout-label">Error</span>
-            <span class="readout-value mono is-bad">−2.93 <small>m</small></span>
+            <span class="readout-value mono" id="ro-error">—</span>
           </div>
           <div class="readout readout-status">
-            <span class="status-pill status-bad">False echo</span>
-            <span class="muted small">Triggered by <b>Neighbour sensor</b> at 11.3 ms</span>
+            <span class="status-pill" id="ro-status">—</span>
+            <span class="muted small" id="ro-status-msg"></span>
           </div>
         </div>
       </div>
 
       <div class="timeline">
         <span class="mono small">0 ms</span>
-        <input type="range" min="0" max="40" step="0.01" value="14.62" aria-label="Time">
-        <span class="mono small">40 ms</span>
+        <input type="range" id="timeline" min="0" max="40" step="0.01" value="0" aria-label="Time">
+        <span class="mono small" id="tl-max">40 ms</span>
       </div>
     </section>
 
     <!-- ───────────── Status bar ───────────── -->
     <footer class="statusbar">
-      <span>Rays 10 000</span>
-      <span>Bounces ≤ 6</span>
-      <span>c = 343.4 m/s</span>
-      <span>λ = 5.92 mm</span>
+      <span id="sb-sensor">—</span>
+      <span id="sb-rays">—</span>
+      <span id="sb-c">—</span>
+      <span id="sb-lambda">—</span>
+      <span id="sb-trace">—</span>
       <span class="grow"></span>
-      <span class="muted">Drag to orbit · scroll to zoom · right-drag to pan</span>
+      <span class="muted">Drag to orbit · scroll to zoom · right-drag to pan · click to select</span>
     </footer>
   </div>
+
+  <dialog class="help" id="help-dialog" aria-labelledby="help-title">
+    <h2 id="help-title">How it works</h2>
+    <p>A sensor sends a short ultrasonic ping. Sound spreads out in its beam, bounces off surfaces and loses energy
+      with distance, in the air, and at every bounce. The sensor listens for the first echo louder than its threshold and turns
+      the echo time into a distance: <span class="mono">distance = c × t / 2</span>.</p>
+    <h3>Try this</h3>
+    <ul>
+      <li>Rotate the wall a few degrees at a time and watch the echo drop out once the mirror bounce misses the sensor.</li>
+      <li>Swap concrete for acoustic foam and see the echo sink under the threshold.</li>
+      <li>Change the temperature: the real echo time changes, but the sensor still assumes 20 °C.</li>
+    </ul>
+    <h3>Controls</h3>
+    <dl class="keys">
+      <div><dt>Space</dt><dd>Ping / pause</dd></div>
+      <div><dt>Q W E R</dt><dd>Select / move / rotate / resize tool</dd></div>
+      <div><dt>S</dt><dd>Toggle snapping</dd></div>
+      <div><dt>Del</dt><dd>Delete selected</dd></div>
+      <div><dt>Ctrl + D</dt><dd>Duplicate selected</dd></div>
+      <div><dt>Esc</dt><dd>Deselect</dd></div>
+    </dl>
+    <h3>Model and limits</h3>
+    <p class="muted">Geometric ray tracing, so no diffraction and no phase interference. Echo levels are in dB SPL at the sensor.
+      Interfering sources can be placed but don't emit yet; that comes in the next phase.</p>
+    <form method="dialog"><button class="btn btn-primary">Close</button></form>
+  </dialog>
 
   <script type="module">
     // ── 00-imports.js ──
@@ -971,16 +1068,394 @@
     // by scripts/build.mjs, so imports live here and top-level names are shared.
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
     import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+    // ── 01-util.js ──
+    // Small shared helpers. No DOM or Three.js here (the tracer tests run in Node).
+
+    const DEG = Math.PI / 180;
+
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+    // Minimal pub/sub. Events used: 'scene' (anything that changes the acoustics),
+    // 'display' (view-only toggles), 'selection', 'items' (list membership/names).
+    function createBus() {
+      const handlers = new Map();
+      return {
+        on(evt, fn) {
+          if (!handlers.has(evt)) handlers.set(evt, []);
+          handlers.get(evt).push(fn);
+        },
+        emit(evt, payload) {
+          for (const fn of handlers.get(evt) || []) fn(payload);
+        },
+      };
+    }
+    const bus = createBus();
+
+    // Deterministic PRNG so a scene always traces to the same result.
+    function mulberry32(seed) {
+      return function () {
+        seed |= 0;
+        seed = (seed + 0x6d2b79f5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    // Number with a real minus sign, and no "−0.00".
+    function fmt(v, dec = 2) {
+      const s = Math.abs(v).toFixed(dec);
+      return v < 0 && Number(s) !== 0 ? '−' + s : s;
+    }
+
+    const deepClone = (o) => JSON.parse(JSON.stringify(o));
+
+    function getPath(obj, path) {
+      return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+    }
+
+    function setPath(obj, path, value) {
+      const keys = path.split('.');
+      const last = keys.pop();
+      const target = keys.reduce((o, k) => o[k], obj);
+      target[last] = value;
+    }
+
+    // ── 02-physics.js ──
+    // Acoustics formulas. Units: metres, seconds, Hz, °C, kPa, dB.
+
+    // Speed of sound in dry air.
+    function speedOfSound(tempC) {
+      return 331.3 * Math.sqrt(1 + tempC / 273.15);
+    }
+
+    // Sensors convert time to distance with a fixed speed of sound (20 °C).
+    // A different air temperature therefore shows up as a distance error.
+    const C_ASSUMED = speedOfSound(20);
+
+    // Atmospheric absorption, ISO 9613-1. Returns dB per metre.
+    function airAbsorptionDbPerM(fHz, tempC, humidityPct, pressureKPa) {
+      const T = tempC + 273.15;
+      const T0 = 293.15;
+      const T01 = 273.16;
+      const pr = 101.325;
+      const pa = pressureKPa;
+      const psatRatio = Math.pow(10, -6.8346 * Math.pow(T01 / T, 1.261) + 4.6151);
+      const h = humidityPct * psatRatio / (pa / pr);
+      const frO = (pa / pr) * (24 + 4.04e4 * h * (0.02 + h) / (0.391 + h));
+      const frN = (pa / pr) * Math.pow(T / T0, -0.5) *
+        (9 + 280 * h * Math.exp(-4.17 * (Math.pow(T / T0, -1 / 3) - 1)));
+      const f2 = fHz * fHz;
+      return 8.686 * f2 * (
+        1.84e-11 * (pr / pa) * Math.sqrt(T / T0) +
+        Math.pow(T / T0, -2.5) * (
+          0.01275 * Math.exp(-2239.1 / T) / (frO + f2 / frO) +
+          0.1068 * Math.exp(-3352 / T) / (frN + f2 / frN)
+        )
+      );
+    }
+
+    // Bessel J1 (Numerical Recipes rational approximation).
+    function besselJ1(x) {
+      const ax = Math.abs(x);
+      if (ax < 8) {
+        const y = x * x;
+        const a1 = x * (72362614232.0 + y * (-7895059235.0 + y * (242396853.1 + y * (-2972611.439 + y * (15704.4826 + y * -30.16036606)))));
+        const a2 = 144725228442.0 + y * (2300535178.0 + y * (18583304.74 + y * (99447.43394 + y * (376.9991397 + y))));
+        return a1 / a2;
+      }
+      const z = 8 / ax;
+      const y = z * z;
+      const xx = ax - 2.356194491;
+      const b1 = 1 + y * (0.183105e-2 + y * (-0.3516396496e-4 + y * (0.2457520174e-5 + y * -0.240337019e-6)));
+      const b2 = 0.04687499995 + y * (-0.2002690873e-3 + y * (0.8449199096e-5 + y * (-0.88228987e-6 + y * 0.105787412e-6)));
+      const ans = Math.sqrt(0.636619772 / ax) * (Math.cos(xx) * b1 - z * Math.sin(xx) * b2);
+      return x < 0 ? -ans : ans;
+    }
+
+    // Baffled circular piston. The beam half-angle is taken as the −6 dB point,
+    // where 2·J1(x)/x = 0.5, i.e. x ≈ 2.215.
+    function pistonKa(halfAngleDeg) {
+      return 2.215 / Math.sin(clamp(halfAngleDeg, 1, 89) * DEG);
+    }
+
+    // Power directivity (0..1) at angle theta (radians) off-axis.
+    function pistonPower(ka, theta) {
+      if (theta >= Math.PI / 2) return 0;
+      const x = ka * Math.sin(theta);
+      if (Math.abs(x) < 1e-6) return 1;
+      const d = 2 * besselJ1(x) / x;
+      return d * d;
+    }
+
+    // Rays are launched out to the second null, so the first side lobe
+    // (−17.6 dB, what usually "sees" the floor) is included.
+    function pistonMaxAngle(ka) {
+      return ka > 7.0156 ? Math.asin(7.0156 / ka) : Math.PI / 2;
+    }
+
+    // ── 03-catalog.js ──
+    // Material and sensor presets.
+    // Ultrasound reflects strongly off anything hard: absorption is small except
+    // for porous materials. Scattering: 0 = mirror-like, 1 = fully diffuse.
+    const MATERIALS = {
+      concrete: { label: 'Concrete (smooth)', absorption: 0.02, scattering: 0.01, color: 0x8c939c },
+      brick:    { label: 'Brick',             absorption: 0.03, scattering: 0.25, color: 0x9c5a44 },
+      wood:     { label: 'Wood',              absorption: 0.06, scattering: 0.1,  color: 0xa57a4f },
+      steel:    { label: 'Steel',             absorption: 0.01, scattering: 0.02, color: 0xaab4bf, metal: true },
+      glass:    { label: 'Glass',             absorption: 0.01, scattering: 0.01, color: 0x9fd4e8, glass: true },
+      foam:     { label: 'Acoustic foam',     absorption: 0.85, scattering: 0.7,  color: 0x3d4350 },
+      fabric:   { label: 'Fabric / curtain',  absorption: 0.55, scattering: 0.6,  color: 0x6d5a8c },
+      custom:   { label: 'Custom',            absorption: null, scattering: null, color: 0x7f8fa0 },
+    };
+
+    const SENSOR_MODELS = {
+      generic58: { label: 'Generic 58 kHz',               freq: 58, bw: 4, halfAngle: 18 },
+      hcsr04:    { label: 'HC-SR04 (40 kHz)',             freq: 40, bw: 2, halfAngle: 15 },
+      maxbotix:  { label: 'MaxBotix-style (42 kHz, wide)', freq: 42, bw: 3, halfAngle: 30 },
+      custom:    { label: 'Custom',                        freq: null, bw: null, halfAngle: null },
+    };
+
+    const TYPE_LABELS = {
+      sensor: 'Sensor', source: 'Source', wall: 'Wall', block: 'Block', pipe: 'Pipe', sphere: 'Sphere', floor: 'Floor',
+    };
+
+    const SHAPE_TYPES = ['wall', 'block', 'pipe', 'sphere'];
+
+    // Ambient ultrasonic noise at the receiver, dB SPL.
+    const AMBIENT_NOISE_DB = 20;
+
+    // ── 04-state.js ──
+    // Scene model. Plain JSON-able data; the viewport, tracer and UI all read it.
+
+    const SCENE_VERSION = 1;
+
+    function defaultEnv() {
+      return {
+        temperature: 20,
+        humidity: 50,
+        pressure: 101.325,
+        room: { enclosed: false, w: 10, h: 3, d: 10 },
+      };
+    }
+
+    function defaultSim() {
+      return { rays: 20000, maxBounces: 6, cutoffDb: -90, rxRadius: 0.01, particles: 5000, colorBy: 'intensity' };
+    }
+
+    function defaultDisplay() {
+      return { particles: true, cone: true, allRays: false, rxRays: true, grid: true, labels: true };
+    }
+
+    const v3 = (x, y, z) => ({ x, y, z });
+
+    function makeItem(type, over = {}) {
+      const base = { id: '', type, name: '', visible: true };
+      let item;
+      switch (type) {
+        case 'sensor':
+          item = {
+            ...base, pos: v3(0, 1, 0), yaw: 0, pitch: 0,
+            model: 'generic58', freq: 58, bw: 4, halfAngle: 18,
+            txLevel: 115, cycles: 8, interval: 60,
+            threshold: 60, blanking: 1.2, maxRange: 6,
+          };
+          break;
+        case 'source':
+          item = {
+            ...base, pos: v3(0, 1, 0), yaw: 0, pitch: 0,
+            emission: 'sensor', freq: 57, level: 112, directivity: 20,
+            mode: 'pulsed', period: 55, offset: 3,
+          };
+          break;
+        case 'floor':
+          item = { ...base, material: 'concrete', absorption: 0.02, scattering: 0.01 };
+          break;
+        default: // wall, block, pipe, sphere
+          item = {
+            ...base, pos: v3(0, 0, 0), rot: v3(0, 0, 0),
+            size: v3(1, 1, 1), radius: 0.15, length: 2,
+            material: 'concrete', absorption: 0.02, scattering: 0.01,
+          };
+          if (type === 'wall') { item.size = v3(0.1, 2, 4); item.pos.y = 1; }
+          if (type === 'block') { item.size = v3(0.8, 0.8, 0.8); item.pos.y = 0.4; item.material = 'wood'; }
+          if (type === 'pipe') { item.radius = 0.15; item.length = 2.4; item.pos.y = 1.2; item.material = 'steel'; }
+          if (type === 'sphere') { item.radius = 0.4; item.pos.y = 0.4; item.material = 'steel'; }
+          if (MATERIALS[item.material].absorption != null) {
+            item.absorption = MATERIALS[item.material].absorption;
+            item.scattering = MATERIALS[item.material].scattering;
+          }
+      }
+      // Merge overrides one level deep so partial vectors work: { pos: { x: 2 } }.
+      for (const [k, v] of Object.entries(over)) {
+        item[k] = v && typeof v === 'object' && !Array.isArray(v) && item[k] && typeof item[k] === 'object'
+          ? { ...item[k], ...v }
+          : v;
+      }
+      return item;
+    }
+
+    // ── Preset scenes ──
+    function withMaterial(type, material, over) {
+      const m = MATERIALS[material];
+      return makeItem(type, { material, absorption: m.absorption, scattering: m.scattering, ...over });
+    }
+
+    const PRESETS = {
+      demo: {
+        label: 'Demo room',
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -3, y: 1, z: 0 } }),
+          makeItem('source', { name: 'Neighbour sensor', pos: { x: -1, y: 1.2, z: 3 }, yaw: -60 }),
+          makeItem('source', { name: 'Air leak', emission: 'hiss', freq: 60, level: 80, directivity: 180, mode: 'continuous', pos: { x: 3.6, y: 0.3, z: -3.4 } }),
+          withMaterial('wall', 'concrete', { name: 'Wall', pos: { x: 2, y: 1, z: 0 }, rot: { y: 20 } }),
+          withMaterial('block', 'wood', { name: 'Block', pos: { x: 0.3, y: 0.4, z: -1.9 }, rot: { y: 30 } }),
+          withMaterial('pipe', 'steel', { name: 'Pipe', pos: { x: 0.1, y: 1.2, z: 1.4 } }),
+        ],
+      },
+      straight: {
+        label: 'Wall straight ahead',
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0 } }),
+          withMaterial('wall', 'concrete', { name: 'Wall', pos: { x: 1, y: 1, z: 0 } }),
+        ],
+      },
+      tilted: {
+        label: 'Tilted wall (echo lost)',
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0 } }),
+          withMaterial('wall', 'concrete', { name: 'Wall', pos: { x: 1, y: 1, z: 0 }, rot: { y: 45 } }),
+        ],
+      },
+      corner: {
+        label: 'Corner reflector',
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -1.5, y: 1, z: 1.5 }, yaw: 45 }),
+          withMaterial('wall', 'concrete', { name: 'Wall 1', pos: { x: 1.5, y: 1, z: 0 }, size: { x: 0.1, y: 2, z: 3 } }),
+          withMaterial('wall', 'concrete', { name: 'Wall 2', pos: { x: 0, y: 1, z: -1.5 }, rot: { y: 90 }, size: { x: 0.1, y: 2, z: 3 } }),
+        ],
+      },
+      pipe: {
+        label: 'Single pipe',
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0 } }),
+          withMaterial('pipe', 'steel', { name: 'Pipe', pos: { x: 0.5, y: 1.2, z: 0 }, radius: 0.1 }),
+        ],
+      },
+      foam: {
+        label: 'Foam vs concrete',
+        items: () => [
+          makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0.8 } }),
+          makeItem('sensor', { name: 'Sensor B', pos: { x: -2, y: 1, z: -0.8 } }),
+          withMaterial('block', 'concrete', { name: 'Concrete block', pos: { x: 1, y: 1, z: 0.8 }, size: { x: 0.3, y: 2, z: 1.2 } }),
+          withMaterial('block', 'foam', { name: 'Foam block', pos: { x: 1, y: 1, z: -0.8 }, size: { x: 0.3, y: 2, z: 1.2 } }),
+        ],
+      },
+      empty: {
+        label: 'Empty',
+        items: () => [makeItem('sensor', { name: 'Sensor A', pos: { x: -2, y: 1, z: 0 } })],
+      },
+    };
+
+    // ── Store ──
+    const store = {
+      state: null,
+      selectedId: null,
+      activeSensorId: null,
+      _next: 1,
+
+      newId(type) {
+        let id;
+        do { id = `${type}${this._next++}`; } while (this.state?.items.some((i) => i.id === id));
+        return id;
+      },
+
+      load(data) {
+        const d = data || {};
+        const room = { ...defaultEnv().room, ...(d.env?.room || {}) };
+        this.state = {
+          version: SCENE_VERSION,
+          env: { ...defaultEnv(), ...(d.env || {}), room },
+          sim: { ...defaultSim(), ...(d.sim || {}) },
+          display: { ...defaultDisplay(), ...(d.display || {}) },
+          items: [],
+        };
+        this._next = 1;
+        const items = Array.isArray(d.items) ? d.items : [];
+        if (!items.some((i) => i.type === 'floor')) items.push(makeItem('floor', { name: 'Floor' }));
+        for (const raw of items) {
+          if (!TYPE_LABELS[raw.type]) continue;
+          const item = makeItem(raw.type, raw);
+          if (!item.id || this.state.items.some((i) => i.id === item.id)) item.id = this.newId(item.type);
+          if (!item.name) item.name = TYPE_LABELS[item.type];
+          this.state.items.push(item);
+        }
+        const firstSensor = this.state.items.find((i) => i.type === 'sensor');
+        this.activeSensorId = firstSensor?.id ?? null;
+        this.selectedId = firstSensor?.id ?? null;
+      },
+
+      loadPreset(key) {
+        const p = PRESETS[key] || PRESETS.demo;
+        this.load({ items: p.items() });
+      },
+
+      serialize() {
+        return JSON.stringify(this.state, null, 2);
+      },
+
+      get items() { return this.state.items; },
+      get(id) { return this.state.items.find((i) => i.id === id) || null; },
+      get selected() { return this.get(this.selectedId); },
+
+      activeSensor() {
+        return this.get(this.activeSensorId) || this.state.items.find((i) => i.type === 'sensor') || null;
+      },
+
+      add(type, over = {}) {
+        const n = this.state.items.filter((i) => i.type === type).length + 1;
+        const item = makeItem(type, { name: `${TYPE_LABELS[type]} ${n}`, ...over });
+        item.id = this.newId(type);
+        // Keep the floor last in the list.
+        const floorIdx = this.state.items.findIndex((i) => i.type === 'floor');
+        this.state.items.splice(floorIdx < 0 ? this.state.items.length : floorIdx, 0, item);
+        return item;
+      },
+
+      remove(id) {
+        const item = this.get(id);
+        if (!item || item.type === 'floor') return false;
+        this.state.items = this.state.items.filter((i) => i.id !== id);
+        if (this.selectedId === id) this.selectedId = null;
+        if (this.activeSensorId === id) this.activeSensorId = this.activeSensor()?.id ?? null;
+        return true;
+      },
+
+      duplicate(id) {
+        const src = this.get(id);
+        if (!src || src.type === 'floor') return null;
+        const copy = deepClone(src);
+        delete copy.id;
+        copy.name = `${src.name} copy`;
+        if (copy.pos) { copy.pos.x += 0.5; copy.pos.z += 0.5; }
+        return this.add(src.type, copy);
+      },
+
+      select(id) {
+        this.selectedId = id;
+        const item = this.get(id);
+        if (item?.type === 'sensor') this.activeSensorId = id;
+      },
+    };
 
     // ── 10-scene.js ──
     // ─────────────────────────────────────────────────────────────
-    // 3D viewport — UI preview.
-    // Everything drawn here is a static placeholder that shows how the
-    // simulation will look. No acoustics are computed yet.
+    // 3D viewport: draws the scene from `store`, handles picking and the
+    // move/rotate/scale gizmo, and shows the traced sound (rays, particles).
     // ─────────────────────────────────────────────────────────────
-
-    const DEG = Math.PI / 180;
 
     const COLORS = {
       sensor: 0x3fb6ff,
@@ -988,28 +1463,34 @@
       select: 0x3fb6ff,
     };
 
-    // Intensity ramp shared with the legend in the viewport overlay.
+    // Intensity ramp shared with the legend in the viewport overlay (0 → −90 dB).
     const INTENSITY_RAMP = ['#fff4b0', '#ffb44a', '#ff4d6d', '#8e3bd9', '#2a2f7a'].map((c) => new THREE.Color(c));
+    const BOUNCE_COLORS = ['#3fb6ff', '#3ecf8e', '#f5c451', '#ff9f43', '#ff5d6c', '#b58cff', '#9aa8b8'].map((c) => new THREE.Color(c));
+    const LEGEND_RANGE_DB = 90;
 
-    function intensityColor(t) {
+    function intensityColor(t, out = new THREE.Color()) {
       // t: 0 = loudest, 1 = quietest
-      const x = Math.min(Math.max(t, 0), 1) * (INTENSITY_RAMP.length - 1);
+      const x = clamp(t, 0, 1) * (INTENSITY_RAMP.length - 1);
       const i = Math.min(Math.floor(x), INTENSITY_RAMP.length - 2);
-      return INTENSITY_RAMP[i].clone().lerp(INTENSITY_RAMP[i + 1], x - i);
+      return out.copy(INTENSITY_RAMP[i]).lerp(INTENSITY_RAMP[i + 1], x - i);
     }
 
     function cssVar(name) {
       return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     }
 
-    function makeLabel(text, kind, [x, y, z] = [0, 0, 0]) {
+    function makeLabel(kind) {
       const el = document.createElement('div');
       el.className = `scene-label scene-label-${kind}`;
-      el.textContent = text;
-      const label = new CSS2DObject(el);
-      label.position.set(x, y, z);
-      return label;
+      return new CSS2DObject(el);
     }
+
+    // Level (dB re Tx at 1 m) of a particle `s` metres along a ray.
+    function particleDb(rel, s, alphaDb) {
+      return 10 * Math.log10(rel) - 20 * Math.log10(Math.max(s, 1)) - alphaDb * s;
+    }
+
+    const noRaycast = (o) => { o.raycast = () => {}; };
 
     function createViewport(container) {
       const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -1021,174 +1502,446 @@
       container.appendChild(labelRenderer.domElement);
 
       const scene = new THREE.Scene();
+      scene.background = new THREE.Color(cssVar('--bg') || '#0e1116');
 
-      const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 200);
-      camera.position.set(-5.2, 4.2, 6.4);
-
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.02, 200);
       const controls = new OrbitControls(camera, renderer.domElement);
-      controls.target.set(0, 0.7, 0.2);
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
-      controls.maxPolarAngle = Math.PI * 0.495;
-      controls.update();
 
-      // ── Lighting ──
       scene.add(new THREE.HemisphereLight(0xcfe3ff, 0x1a1f28, 0.9));
       const sun = new THREE.DirectionalLight(0xffffff, 1.1);
       sun.position.set(-4, 8, 5);
       scene.add(sun);
 
-      // ── Floor + grid ──
-      const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(10, 10),
-        new THREE.MeshStandardMaterial({ color: 0x1b2129, roughness: 0.95 })
-      );
-      floor.rotation.x = -Math.PI / 2;
-      floor.name = 'floor';
-      scene.add(floor);
-
-      const grid = new THREE.GridHelper(10, 20, 0x3a4656, 0x252d38);
-      grid.position.y = 0.001;
-      scene.add(grid);
-
+      // ── Grid, axes, room box ──
+      let grid = null;
       const axes = new THREE.AxesHelper(0.6);
-      axes.position.set(-4.95, 0.002, 4.95);
       scene.add(axes);
+      const roomBox = new THREE.Group();
+      scene.add(roomBox);
 
-      const objects = {}; // id -> Object3D, used for selection highlight
-      const hitTargets = []; // meshes the placeholder rays bounce off
-      hitTargets.push(floor);
-      objects.floor = floor;
+      function rebuildRoom() {
+        const { room } = store.state.env;
+        if (grid) { scene.remove(grid); grid.geometry.dispose(); }
+        const size = Math.max(room.w, room.d);
+        grid = new THREE.GridHelper(size, Math.round(size * 2), 0x3a4656, 0x252d38);
+        grid.position.y = 0.001;
+        scene.add(grid);
+        axes.position.set(-room.w / 2 + 0.05, 0.002, room.d / 2 - 0.05);
 
-      // ── Sensor A ──
-      const sensor = new THREE.Group();
-      sensor.position.set(-3, 0.5, 0);
-      {
-        const body = new THREE.Group();
-        sensor.add(body);
-        sensor.userData.selectTarget = body;
-        const board = new THREE.Mesh(
-          new THREE.BoxGeometry(0.03, 0.2, 0.45),
-          new THREE.MeshStandardMaterial({ color: 0x1f6fb2, roughness: 0.6 })
-        );
-        body.add(board);
-        const canMat = new THREE.MeshStandardMaterial({ color: 0xc9d2dc, metalness: 0.7, roughness: 0.35 });
-        for (const z of [-0.12, 0.12]) {
-          const can = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.1, 32), canMat);
-          can.rotation.z = Math.PI / 2;
-          can.position.set(0.065, 0, z);
-          body.add(can);
+        roomBox.clear();
+        if (room.enclosed) {
+          const geo = new THREE.BoxGeometry(room.w, room.h, room.d);
+          const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x4a5566 }));
+          const shell = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x8c939c, transparent: true, opacity: 0.05, side: THREE.BackSide, depthWrite: false }));
+          edges.position.y = shell.position.y = room.h / 2;
+          noRaycast(shell);
+          noRaycast(edges);
+          roomBox.add(edges, shell);
         }
-
-        // Beam cone (apex at the sensor, opening along +X).
-        const halfAngle = 18 * DEG;
-        const len = 4.2;
-        const coneGeo = new THREE.ConeGeometry(Math.tan(halfAngle) * len, len, 48, 1, true);
-        coneGeo.translate(0, -len / 2, 0);
-        coneGeo.rotateZ(Math.PI / 2);
-        const cone = new THREE.Mesh(
-          coneGeo,
-          new THREE.MeshBasicMaterial({ color: COLORS.sensor, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false })
-        );
-        cone.position.x = 0.12;
-        sensor.add(cone);
-        const coneEdges = new THREE.LineSegments(
-          new THREE.EdgesGeometry(coneGeo, 1),
-          new THREE.LineBasicMaterial({ color: COLORS.sensor, transparent: true, opacity: 0.25 })
-        );
-        coneEdges.position.x = 0.12;
-        sensor.add(coneEdges);
-
-        sensor.add(makeLabel('Sensor A · 58 kHz', 'sensor', [0, 0.32, 0]));
       }
-      scene.add(sensor);
-      objects.sensor1 = sensor;
 
-      // ── Wall (concrete, turned 20°) ──
-      const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(0.1, 2, 4),
-        new THREE.MeshStandardMaterial({ color: 0x8c939c, roughness: 0.9 })
-      );
-      wall.position.set(2, 1, 0);
-      wall.rotation.y = 20 * DEG;
-      wall.add(makeLabel('Wall · concrete', 'object', [0, 1.18, 0]));
-      scene.add(wall);
-      objects.wall1 = wall;
-      hitTargets.push(wall);
+      // ── Item views ──
+      const views = new Map(); // id -> { type, root, label, selectTarget, update(item) }
+      const pickables = [];
 
-      // ── Block (wood) ──
-      const block = new THREE.Mesh(
-        new THREE.BoxGeometry(0.8, 0.8, 0.8),
-        new THREE.MeshStandardMaterial({ color: 0xa57a4f, roughness: 0.8 })
-      );
-      block.position.set(0.3, 0.4, -1.9);
-      block.rotation.y = 30 * DEG;
-      block.add(makeLabel('Block · wood', 'object', [0, 0.6, 0]));
-      scene.add(block);
-      objects.block1 = block;
-      hitTargets.push(block);
-
-      // ── Pipe (steel, vertical) ──
-      const pipe = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.15, 0.15, 2.4, 40),
-        new THREE.MeshStandardMaterial({ color: 0xaab4bf, metalness: 0.8, roughness: 0.3 })
-      );
-      pipe.position.set(0.1, 1.2, 1.4);
-      pipe.add(makeLabel('Pipe · steel', 'object', [0, 1.4, 0]));
-      scene.add(pipe);
-      objects.pipe1 = pipe;
-      hitTargets.push(pipe);
-
-      // ── Interference sources ──
-      function makeSource(id, pos, text) {
-        const g = new THREE.Group();
-        g.position.copy(pos);
-        g.add(new THREE.Mesh(
-          new THREE.SphereGeometry(0.09, 24, 16),
-          new THREE.MeshStandardMaterial({ color: COLORS.source, emissive: COLORS.source, emissiveIntensity: 0.6 })
-        ));
-        [0.3, 0.6, 0.95].forEach((r, i) => {
-          const shell = new THREE.Mesh(
-            new THREE.SphereGeometry(r, 32, 16),
-            new THREE.MeshBasicMaterial({ color: COLORS.source, wireframe: true, transparent: true, opacity: 0.14 - i * 0.035 })
-          );
-          g.add(shell);
-          if (i === 0) g.userData.selectTarget = shell;
+      function surfaceMaterial(item) {
+        const m = MATERIALS[item.material] || MATERIALS.custom;
+        return new THREE.MeshStandardMaterial({
+          color: m.color,
+          roughness: m.metal ? 0.3 : 0.85,
+          metalness: m.metal ? 0.8 : 0,
+          transparent: !!m.glass,
+          opacity: m.glass ? 0.45 : 1,
         });
-        g.add(makeLabel(text, 'source', [0, 0.28, 0]));
-        scene.add(g);
-        objects[id] = g;
-        return g;
       }
-      makeSource('source1', new THREE.Vector3(-1, 1.2, 3), 'Neighbour sensor · 57 kHz');
-      makeSource('source2', new THREE.Vector3(3.6, 0.3, -3.4), 'Air leak');
 
-      // ── Placeholder ray paths (bounced with a real raycast so the look is right) ──
-      scene.updateMatrixWorld(true);
-      addPlaceholderRays(scene, sensor.position.clone().add(new THREE.Vector3(0.12, 0, 0)), hitTargets);
+      function createView(item) {
+        const root = new THREE.Group();
+        root.userData.itemId = item.id;
+        const label = makeLabel(item.type === 'sensor' ? 'sensor' : item.type === 'source' ? 'source' : 'object');
+        const view = { type: item.type, root, label, selectTarget: root };
 
-      // ── Placeholder wavefront shell ──
-      addPlaceholderWavefront(scene, sensor.position.clone().add(new THREE.Vector3(0.12, 0, 0)));
+        if (item.type === 'sensor') {
+          root.rotation.order = 'YZX';
+          const body = new THREE.Group();
+          body.add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.2, 0.45), new THREE.MeshStandardMaterial({ color: 0x1f6fb2, roughness: 0.6 })));
+          const canMat = new THREE.MeshStandardMaterial({ color: 0xc9d2dc, metalness: 0.7, roughness: 0.35 });
+          for (const z of [-0.12, 0.12]) {
+            const can = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.1, 32), canMat);
+            can.rotation.z = Math.PI / 2;
+            can.position.set(0.065, 0, z);
+            body.add(can);
+          }
+          root.add(body);
+          body.traverse((o) => { if (o.isMesh) pickables.push(o); });
+          view.selectTarget = body;
 
-      // ── Selection highlight ──
+          const cone = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: COLORS.sensor, transparent: true, opacity: 0.07, side: THREE.DoubleSide, depthWrite: false }));
+          const coneEdges = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: COLORS.sensor, transparent: true, opacity: 0.25 }));
+          noRaycast(cone);
+          noRaycast(coneEdges);
+          root.add(cone, coneEdges);
+          label.position.set(0, 0.32, 0);
+          root.add(label);
+          let coneKey = '';
+          view.update = (it) => {
+            root.position.set(it.pos.x, it.pos.y, it.pos.z);
+            root.rotation.set(0, it.yaw * DEG, it.pitch * DEG);
+            label.element.textContent = `${it.name} · ${fmt(it.freq, it.freq % 1 ? 1 : 0)} kHz`;
+            const len = Math.min(it.maxRange, 4);
+            const key = `${it.halfAngle}|${len}`;
+            if (key !== coneKey) {
+              coneKey = key;
+              const geo = new THREE.ConeGeometry(Math.tan(clamp(it.halfAngle, 1, 80) * DEG) * len, len, 48, 1, true);
+              geo.translate(0, -len / 2, 0);
+              geo.rotateZ(Math.PI / 2);
+              cone.geometry.dispose();
+              coneEdges.geometry.dispose();
+              cone.geometry = geo;
+              coneEdges.geometry = new THREE.EdgesGeometry(geo, 1);
+            }
+            const active = store.activeSensorId === it.id;
+            cone.visible = coneEdges.visible = store.state.display.cone;
+            cone.material.opacity = active ? 0.07 : 0.03;
+            coneEdges.material.opacity = active ? 0.25 : 0.1;
+          };
+        } else if (item.type === 'source') {
+          root.rotation.order = 'YZX';
+          const core = new THREE.Mesh(new THREE.SphereGeometry(0.09, 24, 16), new THREE.MeshStandardMaterial({ color: COLORS.source, emissive: COLORS.source, emissiveIntensity: 0.6 }));
+          // Bigger invisible sphere so the source is easy to click.
+          const hit = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
+          root.add(core, hit);
+          pickables.push(core, hit);
+          [0.3, 0.6, 0.95].forEach((r, i) => {
+            const shell = new THREE.Mesh(new THREE.SphereGeometry(r, 32, 16), new THREE.MeshBasicMaterial({ color: COLORS.source, wireframe: true, transparent: true, opacity: 0.14 - i * 0.035 }));
+            noRaycast(shell);
+            root.add(shell);
+            if (i === 0) view.selectTarget = shell;
+          });
+          const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 0.5, COLORS.source, 0.1, 0.06);
+          arrow.traverse(noRaycast);
+          root.add(arrow);
+          label.position.set(0, 0.28, 0);
+          root.add(label);
+          view.update = (it) => {
+            root.position.set(it.pos.x, it.pos.y, it.pos.z);
+            root.rotation.set(0, it.yaw * DEG, it.pitch * DEG);
+            arrow.visible = it.directivity < 180;
+            label.element.textContent = `${it.name} · ${fmt(it.freq, it.freq % 1 ? 1 : 0)} kHz`;
+          };
+        } else if (item.type === 'floor') {
+          const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0x1b2129, roughness: 0.95, transparent: true }));
+          mesh.rotation.x = -Math.PI / 2;
+          root.add(mesh);
+          pickables.push(mesh);
+          view.selectTarget = mesh;
+          label.visible = false;
+          view.update = (it) => {
+            const { room } = store.state.env;
+            mesh.scale.set(room.w, room.d, 1);
+            // A hidden (non-reflecting) floor is drawn faintly so it can still be picked.
+            mesh.material.opacity = it.visible ? 0.92 : 0.3;
+          };
+        } else {
+          // wall / block / pipe / sphere: unit geometry scaled to size.
+          const mesh = new THREE.Mesh(new THREE.BufferGeometry(), surfaceMaterial(item));
+          root.add(mesh);
+          pickables.push(mesh);
+          view.selectTarget = mesh;
+          root.add(label);
+          let shapeKey = '', matKey = item.material;
+          view.update = (it) => {
+            if (it.type !== shapeKey) {
+              shapeKey = it.type;
+              mesh.geometry.dispose();
+              mesh.geometry = it.type === 'pipe' ? new THREE.CylinderGeometry(1, 1, 1, 40)
+                : it.type === 'sphere' ? new THREE.SphereGeometry(1, 40, 24)
+                : new THREE.BoxGeometry(1, 1, 1);
+            }
+            if (it.material !== matKey) { matKey = it.material; mesh.material.dispose(); mesh.material = surfaceMaterial(it); }
+            root.position.set(it.pos.x, it.pos.y, it.pos.z);
+            root.rotation.set(it.rot.x * DEG, it.rot.y * DEG, it.rot.z * DEG);
+            let top;
+            if (it.type === 'pipe') { mesh.scale.set(it.radius, it.length, it.radius); top = it.length / 2; }
+            else if (it.type === 'sphere') { mesh.scale.setScalar(it.radius); top = it.radius; }
+            else { mesh.scale.set(it.size.x, it.size.y, it.size.z); top = it.size.y / 2; }
+            label.position.set(0, top + 0.18, 0);
+            const matName = (MATERIALS[it.material] || MATERIALS.custom).label.split(/[ (/]/)[0].toLowerCase();
+            label.element.textContent = `${it.name} · ${matName}`;
+          };
+        }
+        scene.add(root);
+        return view;
+      }
+
+      function removeView(id) {
+        const v = views.get(id);
+        if (!v) return;
+        if (tc.object === v.root) tc.detach();
+        v.root.traverse((o) => {
+          const i = pickables.indexOf(o);
+          if (i >= 0) pickables.splice(i, 1);
+          if (o.isCSS2DObject) o.element.remove();
+        });
+        scene.remove(v.root);
+        views.delete(id);
+      }
+
+      const family = (t) => (SHAPE_TYPES.includes(t) ? 'shape' : t);
+
+      function sync() {
+        const items = store.items;
+        const ids = new Set(items.map((i) => i.id));
+        for (const id of [...views.keys()]) if (!ids.has(id)) removeView(id);
+        for (const it of items) {
+          let v = views.get(it.id);
+          if (v && family(v.type) !== family(it.type)) { removeView(it.id); v = null; }
+          if (!v) { v = createView(it); views.set(it.id, v); }
+          v.type = it.type;
+          v.update(it);
+          v.root.visible = it.visible || it.type === 'floor';
+          v.label.visible = store.state.display.labels && it.type !== 'floor';
+        }
+        if (grid) grid.visible = axes.visible = store.state.display.grid;
+        updateGizmo();
+      }
+
+      // ── Selection + gizmo ──
       const selectBox = new THREE.BoxHelper(undefined, COLORS.select);
       selectBox.material.transparent = true;
       selectBox.material.opacity = 0.9;
+      selectBox.visible = false;
       scene.add(selectBox);
 
-      function select(id) {
-        const obj = objects[id];
-        if (!obj) { selectBox.visible = false; return; }
-        selectBox.visible = true;
-        // Sensors and sources box their core only, not the beam cone or rings.
-        selectBox.setFromObject(obj.userData.selectTarget || obj);
+      const tc = new TransformControls(camera, renderer.domElement);
+      tc.setSize(0.8);
+      scene.add(tc);
+      let tool = 'select';
+      let snap = false;
+      let gizmoUsed = false;
+
+      tc.addEventListener('dragging-changed', (e) => {
+        controls.enabled = !e.value;
+        if (e.value) gizmoUsed = true;
+        else bus.emit('scene', { source: 'gizmo-end' });
+      });
+      tc.addEventListener('objectChange', () => {
+        const item = store.get(tc.object?.userData.itemId);
+        if (!item) return;
+        const r = tc.object;
+        const round = (v) => Math.round(v * 1000) / 1000;
+        item.pos.x = round(r.position.x);
+        item.pos.y = round(r.position.y);
+        item.pos.z = round(r.position.z);
+        if (item.type === 'sensor' || item.type === 'source') {
+          item.yaw = round(r.rotation.y / DEG);
+          item.pitch = round(clamp(r.rotation.z / DEG, -90, 90));
+        } else {
+          item.rot.x = round(r.rotation.x / DEG);
+          item.rot.y = round(r.rotation.y / DEG);
+          item.rot.z = round(r.rotation.z / DEG);
+        }
+        if (tool === 'scale' && SHAPE_TYPES.includes(item.type)) {
+          const s = r.scale;
+          const pos = (v) => Math.max(0.01, round(v));
+          if (item.type === 'pipe') { item.radius = pos(item.radius * Math.max(s.x, s.z)); item.length = pos(item.length * s.y); }
+          else if (item.type === 'sphere') { item.radius = pos(item.radius * Math.max(s.x, s.y, s.z)); }
+          else { item.size.x = pos(item.size.x * s.x); item.size.y = pos(item.size.y * s.y); item.size.z = pos(item.size.z * s.z); }
+          r.scale.set(1, 1, 1);
+        }
+        views.get(item.id)?.update(item);
+        bus.emit('scene', { source: 'gizmo' });
+      });
+
+      function updateGizmo() {
+        const item = store.selected;
+        const v = item && views.get(item.id);
+        const movable = item && item.type !== 'floor' && item.visible;
+        if (tool === 'select' || !movable || !v) {
+          tc.detach();
+        } else {
+          if (tc.object !== v.root) tc.attach(v.root);
+          tc.setMode(tool === 'move' ? 'translate' : tool === 'rotate' ? 'rotate' : 'scale');
+          // Sensors and sources are aimed with yaw + pitch only; they have no size.
+          const aimOnly = item.type === 'sensor' || item.type === 'source';
+          const noScale = tool === 'scale' && aimOnly;
+          tc.showX = !noScale && !(tool === 'rotate' && aimOnly);
+          tc.showY = !noScale;
+          tc.showZ = !noScale;
+          tc.setSpace(tool === 'rotate' && aimOnly ? 'local' : 'world');
+        }
+        selectBox.visible = !!v;
+        if (v) selectBox.setFromObject(v.selectTarget);
       }
 
-      function applyTheme() {
-        scene.background = new THREE.Color(cssVar('--bg') || '#0e1116');
+      function setTool(t) { tool = t; updateGizmo(); }
+      function setSnap(on) {
+        snap = on;
+        tc.setTranslationSnap(on ? 0.1 : null);
+        tc.setRotationSnap(on ? 15 * DEG : null);
+        tc.setScaleSnap(on ? 0.1 : null);
       }
-      applyTheme();
 
+      // ── Picking ──
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      const isShown = (o) => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
+      let downAt = null;
+      renderer.domElement.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; gizmoUsed = false; });
+      renderer.domElement.addEventListener('pointerup', (e) => {
+        if (!downAt || gizmoUsed || e.button !== 0) return;
+        const moved = Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]);
+        downAt = null;
+        if (moved > 4) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(pickables.filter(isShown), false)[0];
+        let id = null;
+        for (let o = hit?.object; o; o = o.parent) if (o.userData.itemId) { id = o.userData.itemId; break; }
+        bus.emit('pick', id);
+      });
+
+      // ── Camera views ──
+      function setView(name) {
+        const { room } = store.state.env;
+        const size = Math.max(room.w, room.d);
+        const t = new THREE.Vector3(0, 0.6, 0);
+        let p = null;
+        if (name === 'top') { p = new THREE.Vector3(0, size * 1.25, 0.001); t.set(0, 0, 0); }
+        else if (name === 'front') p = new THREE.Vector3(0, 1.6, size * 1.1);
+        else if (name === 'side') p = new THREE.Vector3(size * 1.1, 1.6, 0);
+        else if (name === 'sensor') {
+          const s = store.activeSensor();
+          if (s) {
+            const f = aimVector(s.yaw, s.pitch);
+            p = new THREE.Vector3(s.pos.x - f[0] * 0.8, s.pos.y - f[1] * 0.8 + 0.25, s.pos.z - f[2] * 0.8);
+            t.set(s.pos.x + f[0] * 3, s.pos.y + f[1] * 3, s.pos.z + f[2] * 3);
+          }
+        }
+        if (!p) { p = new THREE.Vector3(-size * 0.52, size * 0.42, size * 0.64); t.set(0, 0.7, 0.2); }
+        camera.position.copy(p);
+        controls.target.copy(t);
+        controls.update();
+      }
+
+      // ── Sound visualisation ──
+      const vis = { result: null, alphaDb: 0, c: 343 };
+      const particleGeo = new THREE.BufferGeometry();
+      const particles = new THREE.Points(particleGeo, new THREE.PointsMaterial({ size: 0.035, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false }));
+      const rayLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.25, depthWrite: false }));
+      const rxLines = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.7, depthWrite: false }));
+      for (const o of [particles, rayLines, rxLines]) { o.frustumCulled = false; noRaycast(o); scene.add(o); }
+
+      const tmpColor = new THREE.Color();
+      function colorFor(db, bounce) {
+        const mode = store.state.sim.colorBy;
+        if (mode === 'bounce') return tmpColor.copy(BOUNCE_COLORS[Math.min(bounce, BOUNCE_COLORS.length - 1)]);
+        if (mode === 'source') return tmpColor.setHex(COLORS.sensor);
+        return intensityColor(-db / LEGEND_RANGE_DB, tmpColor);
+      }
+
+      function setLineGeometry(lines, pos, col) {
+        lines.geometry.dispose();
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        lines.geometry = g;
+      }
+
+      function buildRayLines() {
+        const r = vis.result;
+        const pos = [], col = [];
+        if (r && store.state.display.allRays) {
+          const step = Math.max(1, Math.ceil(r.viz.length / 400));
+          for (let i = 0; i < r.viz.length; i += step) {
+            const v = r.viz[i];
+            for (let k = 0; k < v.segRel.length; k++) {
+              const a = k * 3;
+              pos.push(v.pts[a], v.pts[a + 1], v.pts[a + 2], v.pts[a + 3], v.pts[a + 4], v.pts[a + 5]);
+              for (const s of [v.cum[k], v.cum[k + 1]]) {
+                const c = colorFor(particleDb(v.segRel[k], s, vis.alphaDb), k);
+                col.push(c.r, c.g, c.b);
+              }
+            }
+          }
+        }
+        setLineGeometry(rayLines, pos, col);
+      }
+
+      function buildRxLines() {
+        const r = vis.result;
+        const pos = [], col = [];
+        if (r && store.state.display.rxRays && r.top.length) {
+          const maxI = r.top[0].I;
+          // Only paths that matter: within 25 dB of the detection threshold.
+          const minI = Math.pow(10, (r.threshold - 25 - r.txLevel) / 10);
+          for (const a of r.top.filter((x) => x.I >= minI).slice(0, 30)) {
+            // Colour relative to the strongest return so weak paths fade out.
+            const db = 1.5 * 10 * Math.log10(a.I / maxI);
+            const p = a.pts;
+            for (let k = 0; k + 5 < p.length; k += 3) {
+              pos.push(p[k], p[k + 1], p[k + 2], p[k + 3], p[k + 4], p[k + 5]);
+              const c = colorFor(db, k / 3);
+              col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+            }
+          }
+        }
+        setLineGeometry(rxLines, pos, col);
+      }
+
+      function setResult(result) {
+        vis.result = result;
+        if (result) {
+          vis.alphaDb = result.alphaDb;
+          vis.c = result.c;
+          const n = Math.max(1, result.viz.length);
+          const attr = particleGeo.getAttribute('position');
+          if (!attr || attr.count < n) {
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+            particleGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+          }
+        }
+        buildRayLines();
+        buildRxLines();
+      }
+
+      let timeMs = 0;
+      function setTime(t) { timeMs = t; }
+
+      function updateParticles() {
+        const r = vis.result;
+        particles.visible = !!r && store.state.display.particles && timeMs > 0;
+        if (!particles.visible) return;
+        const s = vis.c * timeMs / 1000;
+        const P = particleGeo.getAttribute('position').array;
+        const C = particleGeo.getAttribute('color').array;
+        const intensityMode = store.state.sim.colorBy === 'intensity';
+        let n = 0;
+        for (const v of r.viz) {
+          if (s > v.len) continue;
+          let k = 0;
+          while (k < v.segRel.length - 1 && v.cum[k + 1] < s) k++;
+          const db = particleDb(v.segRel[k], s, vis.alphaDb);
+          if (intensityMode && db < -LEGEND_RANGE_DB - 10) continue;
+          const segLen = v.cum[k + 1] - v.cum[k];
+          const f = segLen > 0 ? (s - v.cum[k]) / segLen : 0;
+          const a = k * 3;
+          P[n * 3] = v.pts[a] + (v.pts[a + 3] - v.pts[a]) * f;
+          P[n * 3 + 1] = v.pts[a + 1] + (v.pts[a + 4] - v.pts[a + 1]) * f;
+          P[n * 3 + 2] = v.pts[a + 2] + (v.pts[a + 5] - v.pts[a + 2]) * f;
+          const c = colorFor(db, k);
+          C[n * 3] = c.r; C[n * 3 + 1] = c.g; C[n * 3 + 2] = c.b;
+          n++;
+        }
+        particleGeo.setDrawRange(0, n);
+        particleGeo.getAttribute('position').needsUpdate = true;
+        particleGeo.getAttribute('color').needsUpdate = true;
+      }
+
+      // ── Render loop ──
       function resize() {
         const w = container.clientWidth;
         const h = container.clientHeight;
@@ -1205,268 +1958,1173 @@
 
       renderer.setAnimationLoop(() => {
         controls.update();
+        if (selectBox.visible) {
+          const v = views.get(store.selectedId);
+          if (v) selectBox.setFromObject(v.selectTarget);
+        }
+        updateParticles();
         renderer.render(scene, camera);
         labelRenderer.render(scene, camera);
       });
 
-      return { select, applyTheme };
+      return {
+        rebuild() { rebuildRoom(); sync(); },
+        sync,
+        select: updateGizmo,
+        setTool, setSnap, setView,
+        setResult, setTime,
+        refreshLines() { buildRayLines(); buildRxLines(); },
+        get snap() { return snap; },
+      };
     }
 
-    function addPlaceholderRays(scene, origin, targets) {
-      const raycaster = new THREE.Raycaster();
-      const positions = [];
-      const colors = [];
-      const maxBounces = 3;
-      const halfAngle = 16 * DEG;
+    // ── 15-tracer.js ──
+    // ─────────────────────────────────────────────────────────────
+    // Acoustic ray tracer (geometric acoustics).
+    //
+    // At 40–60 kHz the wavelength is a few millimetres, much smaller than the
+    // objects, so sound can be treated like light:
+    //   • Rays leave the transducer over its beam (piston directivity), spaced
+    //     evenly in solid angle.
+    //   • At each surface: energy × (1 − absorption); a fraction `scattering`
+    //     is re-radiated diffusely (Lambert), the rest reflects like a mirror.
+    //   • Air absorbs energy along the path (ISO 9613-1).
+    //   • Each ray is a thin Gaussian beam. Its width grows with distance and
+    //     faster after bouncing off curved surfaces (pipes, spheres), so specular
+    //     echoes stay accurate even with few rays hitting a small, curved target.
+    //   • Diffuse returns use "diffuse rain": every hit sends its scattered share
+    //     straight to the receiver if nothing blocks it.
+    //   • The direct echo off a pipe or sphere is computed exactly (curved-mirror
+    //     formula at the specular point) instead of by sampling, because a thin
+    //     curved target catches too few rays for a stable estimate.
+    // No DOM or Three.js in here.
+    // ─────────────────────────────────────────────────────────────
 
-      // A small fan of rays across the beam.
-      const dirs = [];
-      for (let ring = 0; ring <= 2; ring++) {
-        const theta = (ring / 2) * halfAngle;
-        const n = ring === 0 ? 1 : ring * 8;
-        for (let k = 0; k < n; k++) {
-          const phi = (k / n) * Math.PI * 2;
-          dirs.push(new THREE.Vector3(Math.cos(theta), Math.sin(theta) * Math.sin(phi), Math.sin(theta) * Math.cos(phi)).normalize());
+    const TRACE_EPS = 1e-6;
+    const SURFACE_OFFSET = 1e-5;
+
+    const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+    // Rotation matrix columns (local X, Y, Z axes in world) for Euler XYZ in degrees,
+    // same convention as three.js Object3D.rotation.
+    function eulerXYZAxes(rx, ry, rz) {
+      const a = Math.cos(rx * DEG), b = Math.sin(rx * DEG);
+      const c = Math.cos(ry * DEG), d = Math.sin(ry * DEG);
+      const e = Math.cos(rz * DEG), f = Math.sin(rz * DEG);
+      const ae = a * e, af = a * f, be = b * e, bf = b * f;
+      return [
+        [c * e, af + be * d, bf - ae * d],
+        [-c * f, ae - bf * d, be + af * d],
+        [d, -b * c, a * c],
+      ];
+    }
+
+    // Sensor/source aim: yaw about +Y, then pitch up. yaw = pitch = 0 looks along +X.
+    function aimVector(yawDeg, pitchDeg) {
+      const y = yawDeg * DEG, p = pitchDeg * DEG;
+      return [Math.cos(p) * Math.cos(y), Math.sin(p), -Math.cos(p) * Math.sin(y)];
+    }
+
+    function orthoBasis(n) {
+      const helper = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      let u = [n[1] * helper[2] - n[2] * helper[1], n[2] * helper[0] - n[0] * helper[2], n[0] * helper[1] - n[1] * helper[0]];
+      const ul = Math.hypot(u[0], u[1], u[2]);
+      u = [u[0] / ul, u[1] / ul, u[2] / ul];
+      const v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+      return [u, v];
+    }
+
+    // ── Scene → primitives ──
+    function buildPrimitives(state) {
+      const prims = [];
+      const room = state.env.room;
+      const surf = (it) => ({ id: it.id, name: it.name, absorption: it.absorption, scattering: it.scattering });
+      const P = (p) => [p.x, p.y, p.z];
+
+      for (const it of state.items) {
+        if (!it.visible) continue;
+        switch (it.type) {
+          case 'floor':
+            prims.push({ ...surf(it), kind: 'rect', p: [0, 0, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], hu: room.w / 2, hv: room.d / 2 });
+            break;
+          case 'wall':
+          case 'block':
+            prims.push({ ...surf(it), kind: 'box', c: P(it.pos), R: eulerXYZAxes(it.rot.x, it.rot.y, it.rot.z), h: [it.size.x / 2, it.size.y / 2, it.size.z / 2] });
+            break;
+          case 'pipe':
+            prims.push({ ...surf(it), kind: 'cyl', c: P(it.pos), R: eulerXYZAxes(it.rot.x, it.rot.y, it.rot.z), r: it.radius, hl: it.length / 2 });
+            break;
+          case 'sphere':
+            prims.push({ ...surf(it), kind: 'sph', c: P(it.pos), r: it.radius });
+            break;
         }
       }
 
-      for (const d0 of dirs) {
-        let o = origin.clone();
-        let d = d0.clone();
-        let travelled = 0;
-        for (let b = 0; b <= maxBounces; b++) {
-          raycaster.set(o, d);
-          raycaster.far = 8;
-          const hit = raycaster.intersectObjects(targets, false)[0];
-          const end = hit ? hit.point : o.clone().addScaledVector(d, 2.5);
-          const seg = hit ? hit.distance : 2.5;
-          const c0 = intensityColor(travelled / 12 + b * 0.18);
-          travelled += seg;
-          const c1 = intensityColor(travelled / 12 + b * 0.18);
-          positions.push(o.x, o.y, o.z, end.x, end.y, end.z);
-          colors.push(c0.r, c0.g, c0.b, c1.r, c1.g, c1.b);
-          if (!hit) break;
-          const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
-          d.reflect(n).normalize();
-          o = hit.point.clone().addScaledVector(n, 1e-3);
+      if (room.enclosed) {
+        const m = MATERIALS.concrete;
+        const s = (id, name) => ({ id, name, absorption: m.absorption, scattering: m.scattering });
+        const { w, h, d } = room;
+        prims.push({ ...s('room-xp', 'Room wall +X'), kind: 'rect', p: [w / 2, h / 2, 0], n: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1], hu: h / 2, hv: d / 2 });
+        prims.push({ ...s('room-xn', 'Room wall −X'), kind: 'rect', p: [-w / 2, h / 2, 0], n: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1], hu: h / 2, hv: d / 2 });
+        prims.push({ ...s('room-zp', 'Room wall +Z'), kind: 'rect', p: [0, h / 2, d / 2], n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0], hu: w / 2, hv: h / 2 });
+        prims.push({ ...s('room-zn', 'Room wall −Z'), kind: 'rect', p: [0, h / 2, -d / 2], n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0], hu: w / 2, hv: h / 2 });
+        prims.push({ ...s('room-ceil', 'Ceiling'), kind: 'rect', p: [0, h, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], hu: w / 2, hv: d / 2 });
+      }
+      return prims;
+    }
+
+    // ── Intersection ──
+    // Each returns the hit distance (< tBest) or Infinity and writes the surface
+    // normal (world space, not yet facing the ray) into NT.
+    const NT = [0, 0, 0];
+    let CURVED = 0; // curvature (1/m) of the last reported hit; 0 = flat
+
+    function hitBox(pr, o, d, tBest) {
+      const R = pr.R;
+      const lo = [0, 0, 0], ld = [0, 0, 0];
+      const w = [o[0] - pr.c[0], o[1] - pr.c[1], o[2] - pr.c[2]];
+      for (let i = 0; i < 3; i++) { lo[i] = dot3(w, R[i]); ld[i] = dot3(d, R[i]); }
+      let tmin = -Infinity, tmax = Infinity, amin = -1, amax = -1, smin = 0, smax = 0;
+      for (let i = 0; i < 3; i++) {
+        const h = pr.h[i];
+        if (Math.abs(ld[i]) < 1e-12) {
+          if (Math.abs(lo[i]) > h) return Infinity;
+          continue;
+        }
+        let t1 = (-h - lo[i]) / ld[i];
+        let t2 = (h - lo[i]) / ld[i];
+        let s1 = -1, s2 = 1;
+        if (t1 > t2) { [t1, t2] = [t2, t1]; [s1, s2] = [s2, s1]; }
+        if (t1 > tmin) { tmin = t1; amin = i; smin = s1; }
+        if (t2 < tmax) { tmax = t2; amax = i; smax = s2; }
+        if (tmin > tmax) return Infinity;
+      }
+      let t, a, s;
+      if (tmin > TRACE_EPS) { t = tmin; a = amin; s = smin; } else if (tmax > TRACE_EPS) { t = tmax; a = amax; s = smax; } else return Infinity;
+      if (t >= tBest || a < 0) return Infinity;
+      NT[0] = R[a][0] * s; NT[1] = R[a][1] * s; NT[2] = R[a][2] * s;
+      CURVED = 0;
+      return t;
+    }
+
+    function hitCylinder(pr, o, d, tBest) {
+      const R = pr.R;
+      const w = [o[0] - pr.c[0], o[1] - pr.c[1], o[2] - pr.c[2]];
+      const ox = dot3(w, R[0]), oy = dot3(w, R[1]), oz = dot3(w, R[2]);
+      const dx = dot3(d, R[0]), dy = dot3(d, R[1]), dz = dot3(d, R[2]);
+      const r = pr.r, hl = pr.hl;
+      let best = tBest, nx = 0, ny = 0, nz = 0, found = false, curved = 0;
+
+      const a = dx * dx + dz * dz;
+      if (a > 1e-12) {
+        const b = ox * dx + oz * dz;
+        const c = ox * ox + oz * oz - r * r;
+        const disc = b * b - a * c;
+        if (disc >= 0) {
+          const sq = Math.sqrt(disc);
+          for (const t of [(-b - sq) / a, (-b + sq) / a]) {
+            if (t > TRACE_EPS && t < best && Math.abs(oy + t * dy) <= hl) {
+              best = t; nx = (ox + t * dx) / r; ny = 0; nz = (oz + t * dz) / r; found = true; curved = 1 / r;
+              break;
+            }
+          }
+        }
+      }
+      if (Math.abs(dy) > 1e-12) {
+        for (const sgn of [-1, 1]) {
+          const t = (sgn * hl - oy) / dy;
+          if (t > TRACE_EPS && t < best) {
+            const x = ox + t * dx, z = oz + t * dz;
+            if (x * x + z * z <= r * r) { best = t; nx = 0; ny = sgn; nz = 0; found = true; curved = 0; }
+          }
+        }
+      }
+      if (!found) return Infinity;
+      for (let i = 0; i < 3; i++) NT[i] = R[0][i] * nx + R[1][i] * ny + R[2][i] * nz;
+      CURVED = curved;
+      return best;
+    }
+
+    function hitSphere(pr, o, d, tBest) {
+      const w = [o[0] - pr.c[0], o[1] - pr.c[1], o[2] - pr.c[2]];
+      const b = dot3(w, d);
+      const c = dot3(w, w) - pr.r * pr.r;
+      const disc = b * b - c;
+      if (disc < 0) return Infinity;
+      const sq = Math.sqrt(disc);
+      let t = -b - sq;
+      if (t <= TRACE_EPS) t = -b + sq;
+      if (t <= TRACE_EPS || t >= tBest) return Infinity;
+      for (let i = 0; i < 3; i++) NT[i] = (w[i] + t * d[i]) / pr.r;
+      CURVED = 1 / pr.r;
+      return t;
+    }
+
+    function hitRect(pr, o, d, tBest) {
+      const denom = dot3(d, pr.n);
+      if (Math.abs(denom) < 1e-12) return Infinity;
+      const t = ((pr.p[0] - o[0]) * pr.n[0] + (pr.p[1] - o[1]) * pr.n[1] + (pr.p[2] - o[2]) * pr.n[2]) / denom;
+      if (t <= TRACE_EPS || t >= tBest) return Infinity;
+      const q = [o[0] + t * d[0] - pr.p[0], o[1] + t * d[1] - pr.p[1], o[2] + t * d[2] - pr.p[2]];
+      if (Math.abs(dot3(q, pr.u)) > pr.hu || Math.abs(dot3(q, pr.v)) > pr.hv) return Infinity;
+      NT[0] = pr.n[0]; NT[1] = pr.n[1]; NT[2] = pr.n[2];
+      CURVED = 0;
+      return t;
+    }
+
+    const HIT_FN = { box: hitBox, cyl: hitCylinder, sph: hitSphere, rect: hitRect };
+
+    // Nearest hit along the ray, or null. Result object is reused between calls.
+    const HIT = { t: 0, n: [0, 0, 0], prim: null, curvature: 0 };
+    function nearestHit(prims, o, d, tMax) {
+      let best = tMax, prim = null;
+      for (const pr of prims) {
+        const t = HIT_FN[pr.kind](pr, o, d, best);
+        if (t < best) {
+          best = t; prim = pr;
+          HIT.n[0] = NT[0]; HIT.n[1] = NT[1]; HIT.n[2] = NT[2];
+          HIT.curvature = CURVED;
+        }
+      }
+      if (!prim) return null;
+      HIT.t = best; HIT.prim = prim;
+      return HIT;
+    }
+
+    function occluded(prims, o, d, dist) {
+      const limit = dist - 1e-4;
+      for (const pr of prims) if (HIT_FN[pr.kind](pr, o, d, limit) < limit) return true;
+      return false;
+    }
+
+    // ── Main trace ──
+    function traceSensor(state, sensor, prims = buildPrimitives(state)) {
+      const started = (typeof performance !== 'undefined' ? performance : Date).now();
+      const { env, sim } = state;
+
+      const fHz = sensor.freq * 1000;
+      const c = speedOfSound(env.temperature);
+      const alphaDb = airAbsorptionDbPerM(fHz, env.temperature, env.humidity, env.pressure);
+      const alphaNp = alphaDb * Math.LN10 / 10; // power: 10^(−αL/10) = e^(−αNp·L)
+      const tWindow = 2 * sensor.maxRange / c * 1000; // ms, round trip at max range
+      const tMax = Math.max(5, Math.ceil((tWindow + 2) / 5) * 5);
+      const Lmax = c * tMax / 1000;
+
+      const dtMs = 0.005;
+      const nBins = Math.ceil(tMax / dtMs) + 1;
+      const power = new Float64Array(nBins);
+      const binTopI = new Float64Array(nBins);
+      const binTopLabel = new Array(nBins);
+
+      const ka = pistonKa(sensor.halfAngle);
+      const thMax = pistonMaxAngle(ka);
+      const fwd = aimVector(sensor.yaw, sensor.pitch);
+      const [bu, bv] = orthoBasis(fwd);
+      const rx = [sensor.pos.x, sensor.pos.y, sensor.pos.z];
+
+      const N = Math.max(1, Math.round(sim.rays));
+      const cosMax = Math.cos(thMax);
+      const dOmega = 2 * Math.PI * (1 - cosMax) / N;
+      // Gaussian beam width per metre. The footprint-equivalent width is
+      // sqrt(dΩ/2π); widening it smooths the estimate (the energy stays the same).
+      const BEAM_SMOOTHING = 2;
+      const beamSigma0 = BEAM_SMOOTHING * Math.sqrt(dOmega / (2 * Math.PI));
+      const cutoff = Math.pow(10, sim.cutoffDb / 10);
+      const vizStride = Math.max(1, Math.ceil(N / Math.max(1, sim.particles)));
+      const rng = mulberry32(1234567);
+      const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+
+      const viz = [];
+      const groups = new Map();
+      const top = [];
+      const TOP_N = 120;
+
+      // Receive gain for sound arriving from direction `from` (unit vector from the
+      // receiver towards where the sound comes from).
+      const rxGain = (fx, fy, fz) => {
+        const cosT = fx * fwd[0] + fy * fwd[1] + fz * fwd[2];
+        if (cosT <= 0) return 0;
+        return pistonPower(ka, Math.acos(Math.min(1, cosT)));
+      };
+
+      function addArrival(L, I, sig, label, bounces, diffuse, pts) {
+        const tMs = L / c * 1000;
+        if (tMs >= tMax || !(I > 0)) return;
+        const b = Math.round(tMs / dtMs);
+        power[b] += I;
+        if (I > binTopI[b]) { binTopI[b] = I; binTopLabel[b] = label; }
+        let g = groups.get(sig);
+        if (!g) {
+          g = { sig, label, bounces, diffuse, power: 0, maxI: 0, tPeak: 0, tFirst: Infinity };
+          groups.set(sig, g);
+        }
+        g.power += I;
+        if (I > g.maxI) { g.maxI = I; g.tPeak = tMs; }
+        if (tMs < g.tFirst) g.tFirst = tMs;
+        if (top.length < TOP_N || I > top[top.length - 1].I) {
+          const entry = { I, tMs, label, diffuse, pts: pts.concat(rx) };
+          let k = top.length;
+          while (k > 0 && top[k - 1].I < I) k--;
+          top.splice(k, 0, entry);
+          if (top.length > TOP_N) top.pop();
         }
       }
 
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-      scene.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.45 })));
-    }
+      const o = [0, 0, 0], d = [0, 0, 0], q = [0, 0, 0], n = [0, 0, 0];
 
-    function addPlaceholderWavefront(scene, origin) {
-      // Points on a spherical cap: the outgoing pulse a few ms after the ping.
-      const radius = 2.4;
-      const halfAngle = 26 * DEG;
-      const pts = [];
-      const cols = [];
-      let seed = 7;
-      const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-      for (let i = 0; i < 2600; i++) {
-        const cosT = 1 - rand() * (1 - Math.cos(halfAngle));
-        const theta = Math.acos(cosT);
-        const phi = rand() * Math.PI * 2;
-        const r = radius + (rand() - 0.5) * 0.04;
-        pts.push(
-          origin.x + r * cosT,
-          origin.y + r * Math.sin(theta) * Math.sin(phi),
-          origin.z + r * Math.sin(theta) * Math.cos(phi)
-        );
-        // Beam pattern: loudest on-axis, fading towards the edge.
-        const c = intensityColor(Math.pow(theta / halfAngle, 1.6) * 0.9 + 0.05);
-        cols.push(c.r, c.g, c.b);
+      for (let i = 0; i < N; i++) {
+        const cosT = 1 - (i + 0.5) / N * (1 - cosMax);
+        const sinT = Math.sqrt(Math.max(0, 1 - cosT * cosT));
+        const phi = i * GOLDEN;
+        const cp = Math.cos(phi) * sinT, sp = Math.sin(phi) * sinT;
+        for (let k = 0; k < 3; k++) d[k] = fwd[k] * cosT + bu[k] * cp + bv[k] * sp;
+
+        const dirPow = pistonPower(ka, Math.acos(cosT));
+        if (dirPow < cutoff) continue;
+
+        let E = dirPow * dOmega; // ray power, re. on-axis intensity at 1 m
+        let rel = dirPow;        // same without the solid-angle factor (for display)
+        let L = 0;
+        let bounces = 0;
+        let diffuse = false; // after a diffuse bounce, only diffuse rain reaches the receiver
+        // Beam footprint: half-widths (wA, wB) growing at rates (gA, gB) per metre,
+        // along axes ea and eb = d × ea (both perpendicular to the ray).
+        let wA = 0, wB = 0, gA = beamSigma0, gB = beamSigma0;
+        let ea = [bu[0] * -sp + bv[0] * cp, bu[1] * -sp + bv[1] * cp, bu[2] * -sp + bv[2] * cp];
+        {
+          // Make ea exactly perpendicular to d.
+          const k = dot3(ea, d);
+          ea = [ea[0] - k * d[0], ea[1] - k * d[1], ea[2] - k * d[2]];
+          const l = Math.hypot(ea[0], ea[1], ea[2]);
+          ea = l > 1e-9 ? [ea[0] / l, ea[1] / l, ea[2] / l] : orthoBasis(d)[0];
+        }
+        let sig = '';
+        let label = '';
+        let curvedFirst = false; // first bounce off a pipe/sphere side: handled analytically
+        o[0] = rx[0]; o[1] = rx[1]; o[2] = rx[2];
+
+        const keepViz = i % vizStride === 0;
+        const pts = [o[0], o[1], o[2]];
+        const cum = [0];
+        const segRel = [];
+
+        for (;;) {
+          const hit = nearestHit(prims, o, d, Lmax - L);
+          const segLen = hit ? hit.t : Lmax - L;
+          const prim = hit ? hit.prim : null;
+          const nHit = hit ? [hit.n[0], hit.n[1], hit.n[2]] : null;
+          const curvature = hit ? hit.curvature : 0;
+
+          // Specular return passing the receiver on this segment?
+          if (bounces > 0 && !diffuse && !(bounces === 1 && curvedFirst)) {
+            const wx = rx[0] - o[0], wy = rx[1] - o[1], wz = rx[2] - o[2];
+            const tc = wx * d[0] + wy * d[1] + wz * d[2];
+            if (tc > 0 && tc < segLen) {
+              const eb = [d[1] * ea[2] - d[2] * ea[1], d[2] * ea[0] - d[0] * ea[2], d[0] * ea[1] - d[1] * ea[0]];
+              const da = wx * ea[0] + wy * ea[1] + wz * ea[2];
+              const db = wx * eb[0] + wy * eb[1] + wz * eb[2];
+              const sa = Math.max(sim.rxRadius, wA + gA * tc);
+              const sb = Math.max(sim.rxRadius, wB + gB * tc);
+              const q2 = (da * da) / (sa * sa) + (db * db) / (sb * sb);
+              if (q2 < 9) {
+                // Time and arrival direction from the last bounce point, which
+                // stays right even when a wide beam passes the receiver off-centre.
+                const wl = Math.hypot(wx, wy, wz);
+                const g = rxGain(-wx / wl, -wy / wl, -wz / wl);
+                if (g > 0) {
+                  const Lr = L + wl;
+                  const I = E * Math.exp(-alphaNp * Lr) * Math.exp(-q2 / 2) / (2 * Math.PI * sa * sb) * g;
+                  addArrival(Lr, I, sig, label, bounces, false, pts);
+                }
+              }
+            }
+          }
+
+          segRel.push(rel);
+          if (!prim) {
+            pts.push(o[0] + d[0] * segLen, o[1] + d[1] * segLen, o[2] + d[2] * segLen);
+            cum.push(L + segLen);
+            break;
+          }
+
+          L += segLen;
+          wA += gA * segLen;
+          wB += gB * segLen;
+          for (let k = 0; k < 3; k++) q[k] = o[k] + d[k] * segLen;
+          pts.push(q[0], q[1], q[2]);
+          cum.push(L);
+          bounces++;
+          if (bounces === 1) curvedFirst = curvature > 0;
+
+          // Normal facing back towards where the ray came from.
+          const flip = dot3(nHit, d) > 0 ? -1 : 1;
+          for (let k = 0; k < 3; k++) n[k] = nHit[k] * flip;
+
+          const a = prim.absorption;
+          const sc = prim.scattering;
+          const hopLabel = label ? `${label} → ${prim.name}` : prim.name;
+
+          // Diffuse rain: scattered share sent straight to the receiver.
+          if (sc > 0 && a < 1) {
+            const vx = rx[0] - q[0], vy = rx[1] - q[1], vz = rx[2] - q[2];
+            const dist = Math.hypot(vx, vy, vz);
+            const ux = vx / dist, uy = vy / dist, uz = vz / dist;
+            const cosOut = ux * n[0] + uy * n[1] + uz * n[2];
+            const Lr = L + dist;
+            if (cosOut > 0 && Lr < Lmax) {
+              const g = rxGain(-ux, -uy, -uz);
+              if (g > 0) {
+                const from = [q[0] + n[0] * SURFACE_OFFSET, q[1] + n[1] * SURFACE_OFFSET, q[2] + n[2] * SURFACE_OFFSET];
+                if (!occluded(prims, from, [ux, uy, uz], dist)) {
+                  const I = E * (1 - a) * sc * cosOut / Math.PI / (dist * dist) * Math.exp(-alphaNp * Lr) * g;
+                  addArrival(Lr, I, `${sig}>${prim.id}*`, `${hopLabel} (scatter)`, bounces, true, pts);
+                }
+              }
+            }
+          }
+
+          E *= 1 - a;
+          rel *= 1 - a;
+          if (bounces >= sim.maxBounces) break;
+          if (rel * Math.exp(-alphaNp * L) / Math.max(L * L, 1) < cutoff) break;
+
+          if (rng() < sc) {
+            diffuse = true;
+            // Lambert (cosine-weighted) direction.
+            const r1 = rng(), r2 = rng();
+            const [tu, tv] = orthoBasis(n);
+            const ph = 2 * Math.PI * r1, st = Math.sqrt(r2), ct = Math.sqrt(1 - r2);
+            for (let k = 0; k < 3; k++) d[k] = n[k] * ct + tu[k] * Math.cos(ph) * st + tv[k] * Math.sin(ph) * st;
+            sig += `>${prim.id}~`;
+            label = `${hopLabel} (scatter)`;
+          } else {
+            const dn = 2 * dot3(d, n);
+            for (let k = 0; k < 3; k++) d[k] -= dn * n[k];
+            if (curvature > 0 && prim.kind === 'cyl') {
+              // Convex cylinder: the beam fans out across the axis only.
+              // Re-align ea with the across-axis direction first.
+              const axis = prim.R[1];
+              let ax = [axis[1] * d[2] - axis[2] * d[1], axis[2] * d[0] - axis[0] * d[2], axis[0] * d[1] - axis[1] * d[0]];
+              const l = Math.hypot(ax[0], ax[1], ax[2]);
+              if (l > 1e-6) {
+                ax = [ax[0] / l, ax[1] / l, ax[2] / l];
+                // Keep the footprint size when rotating the frame (use the larger width).
+                const r = Math.max(wA, wB), k0 = Math.max(gA, gB);
+                wA = r; wB = Math.min(wA, wB) || r; gA = k0;
+                ea = ax;
+              }
+              gA += 2 * wA * curvature;
+            } else {
+              // Mirror the footprint frame; a sphere spreads it both ways.
+              const en = 2 * dot3(ea, n);
+              for (let k = 0; k < 3; k++) ea[k] -= en * n[k];
+              if (curvature > 0) { gA += 2 * wA * curvature; gB += 2 * wB * curvature; }
+            }
+            sig += `>${prim.id}`;
+            label = hopLabel;
+          }
+          for (let k = 0; k < 3; k++) o[k] = q[k] + n[k] * SURFACE_OFFSET;
+        }
+
+        if (keepViz) viz.push({ pts, cum, segRel, len: cum[cum.length - 1] });
       }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
-      scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.035, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false })));
+
+      // ── Direct echoes off curved surfaces (exact) ──
+      // A spherical wave (radius R) reflects off a convex surface with principal
+      // radii of curvature Rc; the reflected wavefront radius is 1/(1/R + 2/Rc),
+      // and intensity back at the sensor falls by ρ/(ρ + R) in each direction.
+      for (const pr of prims) {
+        if (pr.kind !== 'sph' && pr.kind !== 'cyl') continue;
+        let p, R, rho1, rho2;
+        if (pr.kind === 'sph') {
+          const v = [rx[0] - pr.c[0], rx[1] - pr.c[1], rx[2] - pr.c[2]];
+          const dist = Math.hypot(v[0], v[1], v[2]);
+          if (dist <= pr.r) continue;
+          p = [pr.c[0] + v[0] / dist * pr.r, pr.c[1] + v[1] / dist * pr.r, pr.c[2] + v[2] / dist * pr.r];
+          R = dist - pr.r;
+          rho1 = rho2 = 1 / (1 / R + 2 / pr.r);
+        } else {
+          const w = [rx[0] - pr.c[0], rx[1] - pr.c[1], rx[2] - pr.c[2]];
+          const lx = dot3(w, pr.R[0]), ly = dot3(w, pr.R[1]), lz = dot3(w, pr.R[2]);
+          const radial = Math.hypot(lx, lz);
+          if (Math.abs(ly) > pr.hl || radial <= pr.r) continue; // no perpendicular point on the side
+          const px = lx / radial * pr.r, pz = lz / radial * pr.r;
+          p = [0, 1, 2].map((i) => pr.c[i] + pr.R[0][i] * px + pr.R[1][i] * ly + pr.R[2][i] * pz);
+          R = radial - pr.r;
+          rho1 = 1 / (1 / R + 2 / pr.r); // across the axis
+          rho2 = R;                       // along the axis (flat)
+        }
+        const u = [(p[0] - rx[0]) / R, (p[1] - rx[1]) / R, (p[2] - rx[2]) / R];
+        const cosT = dot3(u, fwd);
+        if (cosT <= 0) continue;
+        const D = pistonPower(ka, Math.acos(Math.min(1, cosT)));
+        if (D <= 0 || occluded(prims, rx, u, R)) continue;
+        const I = D * D / (R * R) * (rho1 / (rho1 + R)) * (rho2 / (rho2 + R)) *
+          (1 - pr.absorption) * (1 - pr.scattering) * Math.exp(-alphaNp * 2 * R);
+        addArrival(2 * R, I, `>${pr.id}`, pr.name, 1, false, [rx[0], rx[1], rx[2], p[0], p[1], p[2]]);
+      }
+
+      // ── Received envelope ──
+      // Each arrival is a pulse of `cycles` periods; the transducer smooths it.
+      const pulseMs = sensor.cycles / fHz * 1000;
+      const sigmaBins = Math.max(0.02, pulseMs / 2.5) / dtMs;
+      const half = Math.ceil(4 * sigmaBins);
+      const kernel = new Float64Array(2 * half + 1);
+      for (let k = -half; k <= half; k++) kernel[k + half] = Math.exp(-(k * k) / (2 * sigmaBins * sigmaBins));
+
+      const echoRel = new Float64Array(nBins);
+      for (let b = 0; b < nBins; b++) {
+        const p = power[b];
+        if (!p) continue;
+        const lo = Math.max(0, b - half), hi = Math.min(nBins - 1, b + half);
+        for (let j = lo; j <= hi; j++) echoRel[j] += p * kernel[j - b + half];
+      }
+
+      const tx = sensor.txLevel;
+      const noiseRel = Math.pow(10, (AMBIENT_NOISE_DB - tx) / 10);
+      const noiseRng = mulberry32(99);
+      const echoDb = new Float32Array(nBins);   // echoes only (for the chart trace)
+      const totalDb = new Float32Array(nBins);  // what the receiver sees
+      for (let b = 0; b < nBins; b++) {
+        const t = b * dtMs;
+        // Transmit burst + ring-down: fades 100 dB over the blanking time.
+        const ringDb = -100 * t / Math.max(0.1, sensor.blanking);
+        const ring = Math.pow(10, ringDb / 10);
+        const noise = noiseRel * (0.6 + 0.8 * noiseRng());
+        echoDb[b] = tx + 10 * Math.log10(echoRel[b] + ring + noise);
+        totalDb[b] = echoDb[b];
+      }
+
+      // ── Detection: first threshold crossing after blanking, within max range ──
+      let detection = null;
+      const bStart = Math.ceil(sensor.blanking / dtMs);
+      const bEnd = Math.min(nBins - 1, Math.floor(tWindow / dtMs));
+      for (let b = bStart; b <= bEnd; b++) {
+        if (totalDb[b] >= sensor.threshold) {
+          const tMs = b * dtMs;
+          // Attribute it to the strongest contribution around the crossing.
+          let bestI = 0, bestLabel = null;
+          for (let j = Math.max(0, b - half); j <= Math.min(nBins - 1, b + 2 * half); j++) {
+            if (binTopI[j] > bestI) { bestI = binTopI[j]; bestLabel = binTopLabel[j]; }
+          }
+          detection = { tMs, distance: C_ASSUMED * tMs / 1000 / 2, label: bestLabel };
+          break;
+        }
+      }
+
+      // ── Ground truth: first surface straight along the sensor axis ──
+      const axisHit = nearestHit(prims, rx, fwd, 1000);
+      const trueDistance = axisHit ? axisHit.t : null;
+      const trueTarget = axisHit ? axisHit.prim.name : null;
+
+      const groupList = [...groups.values()]
+        .map((g) => ({ ...g, levelDb: tx + 10 * Math.log10(g.power) }))
+        .filter((g) => g.levelDb > AMBIENT_NOISE_DB - 10)
+        .sort((a, b) => b.power - a.power);
+
+      const ended = (typeof performance !== 'undefined' ? performance : Date).now();
+      return {
+        sensorId: sensor.id,
+        c, alphaDb, lambda: c / fHz, fHz,
+        tMax, tWindow, dtMs, nBins,
+        echoDb, totalDb,
+        noiseDb: tx + 10 * Math.log10(noiseRel),
+        threshold: sensor.threshold,
+        txLevel: tx,
+        blanking: sensor.blanking,
+        detection,
+        trueDistance, trueTarget,
+        groups: groupList,
+        top,
+        viz,
+        rays: N,
+        traceMs: ended - started,
+      };
     }
 
     // ── 20-echo-chart.js ──
     // ─────────────────────────────────────────────────────────────
-    // Echo (A-scan) chart — UI preview with mock data.
-    // Shows received envelope vs. time, the blanking window, the
-    // detection threshold and where the sensor "decided" it saw an echo.
+    // Echo (A-scan) chart: received level vs time for the active sensor,
+    // with the blanking window, threshold, detection and true distance.
+    // Also the small "distance history" chart.
     // ─────────────────────────────────────────────────────────────
 
-    const MOCK = {
-      tMax: 40,            // ms
-      c: 343.4,            // m/s, for the distance axis
-      blanking: 1.2,       // ms
-      threshold: 0.34,     // normalised amplitude
-      playhead: 14.62,     // ms
-      detectedAt: 11.3,    // ms (the false echo)
-      // Gaussian envelope peaks: [centre ms, width ms, amplitude, kind]
-      peaks: [
-        [0.35, 0.45, 1.0, 'tx'],          // transmit burst / ring-down
-        [11.3, 0.22, 0.52, 'interf'],     // neighbour sensor, 57 kHz
-        [24.9, 0.35, 0.14, 'echo'],       // block (diffuse, weak)
-        [28.36, 0.28, 0.61, 'echo'],      // wall, direct echo (4.87 m)
-        [33.2, 0.4, 0.2, 'echo'],         // wall → floor multipath
-        [36.4, 0.3, 0.12, 'interf'],      // air leak hiss burst
-      ],
-    };
+    const CHART_DB_MIN = 0;
+    const CHART_DB_MAX = 120;
 
-    function createEchoChart(canvas) {
+    function setupCanvas(canvas) {
       const ctx = canvas.getContext('2d');
-
-      // Deterministic noise floor so the preview looks the same every load.
-      const noise = [];
-      let seed = 11;
-      for (let i = 0; i < 800; i++) {
-        seed = (seed * 16807) % 2147483647;
-        noise.push(seed / 2147483647);
-      }
-
-      function envelope(t, kinds) {
-        let v = 0;
-        for (const [c, w, a, k] of MOCK.peaks) {
-          if (!kinds.includes(k)) continue;
-          v += a * Math.exp(-((t - c) ** 2) / (2 * w * w));
-        }
-        return v;
-      }
-
-      function draw() {
+      return function prepare() {
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
         const W = canvas.clientWidth;
         const H = canvas.clientHeight;
-        if (!W || !H) return;
-        canvas.width = Math.round(W * dpr);
-        canvas.height = Math.round(H * dpr);
+        if (!W || !H) return null;
+        if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) {
+          canvas.width = Math.round(W * dpr);
+          canvas.height = Math.round(H * dpr);
+        }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, W, H);
+        return { ctx, W, H };
+      };
+    }
 
-        const col = {
-          text: cssVar('--text-muted'),
-          faint: cssVar('--text-faint'),
-          grid: cssVar('--border'),
-          accent: cssVar('--accent'),
-          source: cssVar('--source'),
-          bad: cssVar('--bad'),
-          panel2: cssVar('--panel-2'),
-        };
+    function chartColors() {
+      return {
+        text: cssVar('--text-muted'),
+        faint: cssVar('--text-faint'),
+        grid: cssVar('--border'),
+        accent: cssVar('--accent'),
+        bad: cssVar('--bad'),
+        good: cssVar('--good'),
+        panel2: cssVar('--panel-2'),
+        mono: cssVar('--mono'),
+        font: cssVar('--font'),
+      };
+    }
 
-        const pad = { l: 40, r: 24, t: 24, b: 24 };
+    function createEchoChart(canvas, { onScrub } = {}) {
+      const prepare = setupCanvas(canvas);
+      let result = null;
+      let timeMs = 0;
+      const pad = { l: 44, r: 16, t: 24, b: 22 };
+      let layout = null;
+
+      function draw() {
+        const p = prepare();
+        if (!p) return;
+        const { ctx, W, H } = p;
+        const col = chartColors();
+        const tMax = result ? result.tMax : 40;
         const pw = W - pad.l - pad.r;
         const ph = H - pad.t - pad.b;
-        const x = (t) => pad.l + (t / MOCK.tMax) * pw;
-        const y = (a) => pad.t + ph - Math.min(a, 1.05) / 1.05 * ph;
+        const x = (t) => pad.l + (t / tMax) * pw;
+        const y = (db) => pad.t + ph - (clamp(db, CHART_DB_MIN, CHART_DB_MAX) - CHART_DB_MIN) / (CHART_DB_MAX - CHART_DB_MIN) * ph;
+        layout = { x0: pad.l, pw, tMax };
 
-        ctx.font = '10.5px ' + cssVar('--mono');
-
-        // Blanking window
-        ctx.fillStyle = col.panel2;
-        ctx.fillRect(x(0), pad.t, x(MOCK.blanking) - x(0), ph);
-
-        // Grid + time axis
-        ctx.strokeStyle = col.grid;
+        ctx.font = '10.5px ' + col.mono;
         ctx.lineWidth = 1;
+
+        if (result) {
+          // Blanking window and the part beyond max range.
+          ctx.fillStyle = col.panel2;
+          ctx.fillRect(x(0), pad.t, x(result.blanking) - x(0), ph);
+          if (result.tWindow < tMax) ctx.fillRect(x(result.tWindow), pad.t, x(tMax) - x(result.tWindow), ph);
+        }
+
+        // Grid, time axis (bottom) and the distance the sensor would report (top).
+        const tStep = tMax > 60 ? 10 : 5;
+        ctx.strokeStyle = col.grid;
         ctx.fillStyle = col.faint;
         ctx.textAlign = 'center';
-        for (let t = 0; t <= MOCK.tMax; t += 5) {
+        for (let t = 0; t <= tMax + 1e-9; t += tStep) {
+          const gx = Math.round(x(t)) + 0.5;
           ctx.beginPath();
-          ctx.moveTo(Math.round(x(t)) + 0.5, pad.t);
-          ctx.lineTo(Math.round(x(t)) + 0.5, pad.t + ph);
+          ctx.moveTo(gx, pad.t);
+          ctx.lineTo(gx, pad.t + ph);
           ctx.stroke();
-          ctx.fillText(`${t}`, x(t), H - 8);
-          // Distance axis on top: one-way distance = c·t/2
-          const d = (MOCK.c * t / 1000 / 2).toFixed(1);
-          ctx.fillText(`${d} m`, x(t), 14);
+          ctx.fillText(`${t}`, x(t), H - 7);
+          ctx.fillText(`${fmt(C_ASSUMED * t / 2000, 1)} m`, x(t), 14);
         }
         ctx.textAlign = 'right';
-        for (const a of [0, 0.5, 1]) {
+        for (let db = CHART_DB_MIN; db <= CHART_DB_MAX; db += 20) {
+          const gy = Math.round(y(db)) + 0.5;
           ctx.beginPath();
-          ctx.moveTo(pad.l, Math.round(y(a)) + 0.5);
-          ctx.lineTo(pad.l + pw, Math.round(y(a)) + 0.5);
+          ctx.moveTo(pad.l, gy);
+          ctx.lineTo(pad.l + pw, gy);
           ctx.stroke();
-          ctx.fillText(a.toFixed(1), pad.l - 6, y(a) + 3);
+          ctx.fillText(`${db}`, pad.l - 6, gy + 3);
         }
         ctx.textAlign = 'left';
-        ctx.fillText('ms', 6, H - 8);
+        ctx.fillText('ms', 4, H - 7);
+        ctx.fillText('dB', 4, pad.t + 3);
 
-        // Filled traces: echoes (incl. transmit) and interference
-        const N = Math.max(200, Math.floor(pw));
-        const trace = (kinds, color, withNoise) => {
-          ctx.beginPath();
-          ctx.moveTo(x(0), y(0));
-          for (let i = 0; i <= N; i++) {
-            const t = (i / N) * MOCK.tMax;
-            const n = withNoise ? noise[i % noise.length] * 0.035 : 0;
-            ctx.lineTo(x(t), y(envelope(t, kinds) + n));
-          }
-          ctx.lineTo(x(MOCK.tMax), y(0));
-          ctx.closePath();
-          ctx.globalAlpha = 0.18;
-          ctx.fillStyle = color;
-          ctx.fill();
-          ctx.globalAlpha = 1;
-          ctx.strokeStyle = color;
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        };
-        trace(['tx', 'echo'], col.accent, true);
-        trace(['interf'], col.source, false);
+        if (!result) {
+          ctx.fillStyle = col.text;
+          ctx.textAlign = 'center';
+          ctx.font = '12px ' + col.font;
+          ctx.fillText('Add a sensor to see its echoes', pad.l + pw / 2, pad.t + ph / 2);
+          return;
+        }
+
+        // Received level: peak per pixel column so short echoes aren't lost.
+        const { totalDb, nBins } = result;
+        const cols = Math.max(1, Math.floor(pw));
+        ctx.beginPath();
+        ctx.moveTo(x(0), y(CHART_DB_MIN));
+        for (let c = 0; c <= cols; c++) {
+          const b0 = Math.floor((c / cols) * (nBins - 1));
+          const b1 = Math.max(b0, Math.floor(((c + 1) / cols) * (nBins - 1)));
+          let m = -Infinity;
+          for (let b = b0; b <= b1; b++) if (totalDb[b] > m) m = totalDb[b];
+          ctx.lineTo(pad.l + c, y(m));
+        }
+        ctx.lineTo(pad.l + cols, y(CHART_DB_MIN));
+        ctx.closePath();
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = col.accent;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = col.accent;
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.lineWidth = 1;
 
         // Threshold
         ctx.setLineDash([5, 4]);
         ctx.strokeStyle = col.bad;
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.moveTo(x(MOCK.blanking), y(MOCK.threshold));
-        ctx.lineTo(pad.l + pw, y(MOCK.threshold));
+        ctx.moveTo(x(result.blanking), y(result.threshold));
+        ctx.lineTo(x(result.tWindow), y(result.threshold));
         ctx.stroke();
+
+        // True distance (round trip at the real speed of sound)
+        if (result.trueDistance != null) {
+          const tt = 2 * result.trueDistance / result.c * 1000;
+          if (tt <= tMax) {
+            ctx.strokeStyle = col.good;
+            ctx.beginPath();
+            ctx.moveTo(Math.round(x(tt)) + 0.5, pad.t);
+            ctx.lineTo(Math.round(x(tt)) + 0.5, pad.t + ph);
+            ctx.stroke();
+          }
+        }
         ctx.setLineDash([]);
 
         // Detection marker
-        const dx = x(MOCK.detectedAt);
-        ctx.fillStyle = col.bad;
-        ctx.beginPath();
-        ctx.moveTo(dx, y(MOCK.threshold) - 2);
-        ctx.lineTo(dx - 5, y(MOCK.threshold) - 10);
-        ctx.lineTo(dx + 5, y(MOCK.threshold) - 10);
-        ctx.closePath();
-        ctx.fill();
-        ctx.font = '600 11px ' + cssVar('--font');
-        ctx.fillText('Detected', dx + 8, y(MOCK.threshold) - 4);
+        const det = result.detection;
+        if (det) {
+          const dx = x(det.tMs);
+          const dy = y(result.threshold);
+          ctx.fillStyle = col.bad;
+          ctx.beginPath();
+          ctx.moveTo(dx, dy - 2);
+          ctx.lineTo(dx - 5, dy - 10);
+          ctx.lineTo(dx + 5, dy - 10);
+          ctx.closePath();
+          ctx.fill();
+          ctx.font = '600 11px ' + col.font;
+          const text = `Detected ${fmt(det.distance, 2)} m`;
+          const tw = ctx.measureText(text).width;
+          ctx.fillText(text, dx + 8 + tw > pad.l + pw ? dx - 8 - tw : dx + 8, dy - 4);
+        }
 
         // Playhead
         ctx.strokeStyle = col.text;
-        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(Math.round(x(MOCK.playhead)) + 0.5, pad.t);
-        ctx.lineTo(Math.round(x(MOCK.playhead)) + 0.5, pad.t + ph);
+        ctx.moveTo(Math.round(x(timeMs)) + 0.5, pad.t);
+        ctx.lineTo(Math.round(x(timeMs)) + 0.5, pad.t + ph);
         ctx.stroke();
 
         ctx.fillStyle = col.faint;
-        ctx.font = '10.5px ' + cssVar('--font');
+        ctx.font = '10.5px ' + col.font;
         ctx.save();
-        ctx.translate(x(MOCK.blanking) - 4, pad.t + ph - 4);
+        ctx.translate(x(result.blanking) - 4, pad.t + ph - 4);
         ctx.rotate(-Math.PI / 2);
         ctx.fillText('blanking', 0, 0);
         ctx.restore();
       }
 
+      // Click / drag on the chart to scrub time.
+      function scrub(e) {
+        if (!layout || !onScrub) return;
+        const rect = canvas.getBoundingClientRect();
+        const t = ((e.clientX - rect.left) - layout.x0) / layout.pw * layout.tMax;
+        onScrub(clamp(t, 0, layout.tMax));
+      }
+      canvas.addEventListener('pointerdown', (e) => { canvas.setPointerCapture(e.pointerId); scrub(e); });
+      canvas.addEventListener('pointermove', (e) => { if (e.buttons & 1) scrub(e); });
+
       new ResizeObserver(draw).observe(canvas);
       draw();
-      return { draw };
+      return {
+        draw,
+        setResult(r) { result = r; draw(); },
+        setTime(t) { timeMs = t; draw(); },
+      };
+    }
+
+    function createHistoryChart(canvas) {
+      const prepare = setupCanvas(canvas);
+      const MAX = 60;
+      let entries = []; // { measured: number|null, truth: number|null }
+
+      function draw() {
+        const p = prepare();
+        if (!p) return;
+        const { ctx, W, H } = p;
+        const col = chartColors();
+        const pad = { l: 44, r: 16, t: 14, b: 22 };
+        const pw = W - pad.l - pad.r;
+        const ph = H - pad.t - pad.b;
+
+        const values = entries.flatMap((e) => [e.measured, e.truth]).filter((v) => v != null);
+        const hi = Math.max(1, Math.ceil(Math.max(0, ...values) + 0.5));
+        const x = (i) => pad.l + (i / (MAX - 1)) * pw;
+        const y = (v) => pad.t + ph - (v / hi) * ph;
+
+        ctx.font = '10.5px ' + col.mono;
+        ctx.strokeStyle = col.grid;
+        ctx.fillStyle = col.faint;
+        ctx.textAlign = 'right';
+        const step = hi > 10 ? 2 : hi > 4 ? 1 : 0.5;
+        for (let v = 0; v <= hi + 1e-9; v += step) {
+          const gy = Math.round(y(v)) + 0.5;
+          ctx.beginPath();
+          ctx.moveTo(pad.l, gy);
+          ctx.lineTo(pad.l + pw, gy);
+          ctx.stroke();
+          ctx.fillText(fmt(v, step < 1 ? 1 : 0), pad.l - 6, gy + 3);
+        }
+        ctx.textAlign = 'left';
+        ctx.fillText('m', 4, pad.t + 3);
+        ctx.fillText('pings →', pad.l, H - 7);
+
+        if (!entries.length) {
+          ctx.fillStyle = col.text;
+          ctx.textAlign = 'center';
+          ctx.font = '12px ' + col.font;
+          ctx.fillText('Each finished ping adds a point. Turn on Loop and move things around.', pad.l + pw / 2, pad.t + ph / 2);
+          return;
+        }
+
+        const line = (key, color, dashed) => {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash(dashed ? [5, 4] : []);
+          ctx.beginPath();
+          let pen = false;
+          entries.forEach((e, i) => {
+            const v = e[key];
+            if (v == null) { pen = false; return; }
+            if (pen) ctx.lineTo(x(i), y(v)); else ctx.moveTo(x(i), y(v));
+            pen = true;
+          });
+          ctx.stroke();
+          ctx.setLineDash([]);
+        };
+        line('truth', col.good, true);
+        line('measured', col.accent, false);
+        entries.forEach((e, i) => {
+          if (e.measured == null) {
+            // No echo: red tick on the axis.
+            ctx.fillStyle = col.bad;
+            ctx.fillRect(x(i) - 2, pad.t + ph - 6, 4, 6);
+          } else {
+            ctx.fillStyle = col.accent;
+            ctx.beginPath();
+            ctx.arc(x(i), y(e.measured), 2.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+      }
+
+      new ResizeObserver(draw).observe(canvas);
+      draw();
+      return {
+        draw,
+        push(entry) { entries.push(entry); if (entries.length > MAX) entries = entries.slice(-MAX); draw(); },
+        clear() { entries = []; draw(); },
+      };
     }
 
     // ── 30-ui.js ──
     // ─────────────────────────────────────────────────────────────
-    // UI wiring — preview only. Controls respond visually (tabs, selection,
-    // slider read-outs, toggles) but nothing drives a simulation yet.
+    // UI wiring: outliner, inspector data binding, toolbar, keyboard, files.
+    //
+    // Inputs declare what they edit: data-bind="pos.x" inside a
+    // [data-scope] container (item = selected object, env, sim, display).
     // ─────────────────────────────────────────────────────────────
 
-    function initUI({ viewport }) {
+    function initUI({ viewport, sim }) {
       const $ = (sel, root = document) => root.querySelector(sel);
       const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-      // Right panel tabs
+      // ── Toast ──
+      const toastEl = document.createElement('div');
+      toastEl.className = 'toast';
+      toastEl.setAttribute('role', 'status');
+      document.body.appendChild(toastEl);
+      let toastTimer;
+      function toast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add('is-visible');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove('is-visible'), 2200);
+      }
+
+      // ── Select options from the catalogs ──
+      const fillOptions = (sel, map) => {
+        sel.replaceChildren(...Object.entries(map).map(([k, v]) => new Option(v.label, k)));
+      };
+      $$('select[data-options="materials"]').forEach((s) => fillOptions(s, MATERIALS));
+      $$('select[data-options="sensorModels"]').forEach((s) => fillOptions(s, SENSOR_MODELS));
+
+      // ── Outliner ──
+      const outliner = $('#outliner');
+      const GROUPS = [
+        ['Sensors', (i) => i.type === 'sensor', 'sensor'],
+        ['Interference sources', (i) => i.type === 'source', 'source'],
+        ['Objects', (i) => SHAPE_TYPES.includes(i.type) || i.type === 'floor', 'object'],
+      ];
+
+      function renderOutliner() {
+        const frag = document.createDocumentFragment();
+        for (const [title, test, dot] of GROUPS) {
+          const items = store.items.filter(test);
+          const head = document.createElement('li');
+          head.className = 'outliner-group';
+          head.textContent = title;
+          frag.appendChild(head);
+          if (!items.length) {
+            const empty = document.createElement('li');
+            empty.className = 'outliner-empty';
+            empty.textContent = 'None';
+            frag.appendChild(empty);
+          }
+          for (const it of items) {
+            const li = document.createElement('li');
+            li.className = 'outliner-item';
+            li.classList.toggle('is-selected', it.id === store.selectedId);
+            li.classList.toggle('is-hidden', !it.visible);
+            li.dataset.id = it.id;
+            li.setAttribute('role', 'option');
+            li.setAttribute('aria-selected', String(it.id === store.selectedId));
+            const d = document.createElement('span');
+            d.className = `dot dot-${dot}`;
+            const name = document.createElement('span');
+            name.className = 'name';
+            name.textContent = it.name;
+            li.append(d, name);
+            if (it.type === 'sensor' && it.id === store.activeSensor()?.id) {
+              const tag = document.createElement('span');
+              tag.className = 'tag';
+              tag.textContent = 'active';
+              tag.title = 'The echo chart and readouts show this sensor';
+              li.appendChild(tag);
+            }
+            const eye = document.createElement('button');
+            eye.className = 'eye';
+            eye.textContent = it.visible ? '◉' : '○';
+            eye.title = it.type === 'floor' ? (it.visible ? 'Floor reflects (click to turn off)' : 'Floor off') : it.visible ? 'Hide' : 'Show';
+            li.appendChild(eye);
+            frag.appendChild(li);
+          }
+        }
+        outliner.replaceChildren(frag);
+        $('#scene-count').textContent = String(store.items.length);
+      }
+
+      outliner.addEventListener('click', (e) => {
+        const li = e.target.closest('.outliner-item');
+        if (!li) return;
+        if (e.target.closest('.eye')) {
+          const it = store.get(li.dataset.id);
+          it.visible = !it.visible;
+          renderOutliner();
+          viewport.sync();
+          bus.emit('scene', { source: 'visibility' });
+          return;
+        }
+        selectItem(li.dataset.id);
+      });
+
+      function selectItem(id) {
+        store.select(id);
+        renderOutliner();
+        showInspector();
+        viewport.sync();
+        bus.emit('selection');
+      }
+      bus.on('pick', (id) => selectItem(id));
+
+      // ── Inspector ──
+      function inspectorKind(item) {
+        if (!item) return 'none';
+        if (item.type === 'sensor' || item.type === 'source') return item.type;
+        return 'object';
+      }
+
+      function showInspector() {
+        const item = store.selected;
+        const kind = inspectorKind(item);
+        for (const ins of $$('.inspector')) ins.hidden = ins.dataset.kind !== kind;
+        const ins = $(`.inspector[data-kind="${kind}"]`);
+        if (item && ins) {
+          for (const el of $$('[data-show-for]', ins)) el.hidden = !el.dataset.showFor.split(' ').includes(item.type);
+          for (const el of $$('[data-hide-for]', ins)) el.hidden = el.dataset.hideFor.split(' ').includes(item.type);
+        }
+        fillScope($('[data-scope="item"]'));
+        updateSourceCallout();
+      }
+
+      function scopeTarget(scope) {
+        if (scope === 'item') return store.selected;
+        return store.state[scope];
+      }
+
+      function formatOut(el, v) {
+        const dec = Number(el.dataset.dec || 0);
+        el.textContent = fmt(v, dec) + (el.dataset.unit || '');
+      }
+
+      function fillScope(scopeEl) {
+        const target = scopeTarget(scopeEl.dataset.scope);
+        if (!target) return;
+        for (const el of $$('[data-bind]', scopeEl)) {
+          if (el.closest('.inspector')?.hidden) continue;
+          const v = getPath(target, el.dataset.bind);
+          if (v === undefined || el === document.activeElement) continue;
+          if (el.classList.contains('segmented')) {
+            for (const b of $$('button', el)) b.classList.toggle('is-active', b.dataset.value === String(v));
+          } else if (el.type === 'checkbox') {
+            el.checked = !!v;
+          } else if (el.type === 'number') {
+            el.value = String(Math.round(v * 1000) / 1000);
+          } else {
+            el.value = String(v);
+          }
+        }
+        for (const el of $$('[data-out]', scopeEl)) {
+          if (el.closest('.inspector')?.hidden) continue;
+          const v = getPath(target, el.dataset.out);
+          if (v !== undefined) formatOut(el, v);
+        }
+      }
+
+      function fillAll() {
+        for (const s of $$('[data-scope]')) fillScope(s);
+        updateDerived();
+        updateSourceCallout();
+      }
+
+      function parseValue(el, eventType) {
+        if (el.type === 'checkbox') return el.checked;
+        if (el.type === 'number' || el.type === 'range' || el.dataset.type === 'number') {
+          const v = Number(el.value);
+          if (el.value === '' || !Number.isFinite(v)) return undefined;
+          const min = el.min !== '' ? Number(el.min) : -Infinity;
+          const max = el.max !== '' ? Number(el.max) : Infinity;
+          if (v < min || v > max) {
+            // Clamp once editing is done; while typing, just wait.
+            if (eventType !== 'change') return undefined;
+            const c = clamp(v, min, max);
+            el.value = String(c);
+            return c;
+          }
+          return v;
+        }
+        return el.value;
+      }
+
+      function onBoundInput(e) {
+        const el = e.target.closest('[data-bind]');
+        if (!el || el.classList.contains('segmented')) return;
+        const scopeEl = el.closest('[data-scope]');
+        if (!scopeEl) return;
+        const value = parseValue(el, e.type);
+        if (value === undefined) return;
+        applyChange(scopeEl, el.dataset.bind, value);
+      }
+      document.addEventListener('input', onBoundInput);
+      document.addEventListener('change', onBoundInput);
+
+      document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.segmented[data-bind] button');
+        if (!btn) return;
+        const seg = btn.closest('.segmented');
+        const scopeEl = seg.closest('[data-scope]');
+        if (scopeEl) applyChange(scopeEl, seg.dataset.bind, btn.dataset.value);
+      });
+
+      function applyChange(scopeEl, path, value) {
+        const scope = scopeEl.dataset.scope;
+        const target = scopeTarget(scope);
+        if (!target || getPath(target, path) === value) return;
+        setPath(target, path, value);
+
+        if (scope === 'item') {
+          const it = target;
+          if (path === 'material') {
+            const m = MATERIALS[value];
+            if (m && m.absorption != null) { it.absorption = m.absorption; it.scattering = m.scattering; }
+          } else if (path === 'absorption' || path === 'scattering') {
+            it.material = 'custom';
+          } else if (path === 'model') {
+            const m = SENSOR_MODELS[value];
+            if (m && m.freq != null) { it.freq = m.freq; it.bw = m.bw; it.halfAngle = m.halfAngle; }
+          } else if (it.type === 'sensor' && (path === 'freq' || path === 'bw' || path === 'halfAngle')) {
+            it.model = 'custom';
+          } else if (path === 'type') {
+            // Keep auto-generated names in step with the shape: "Wall 2" → "Pipe 2".
+            const m = it.name.match(/^(Wall|Block|Pipe|Sphere)(\b.*)$/);
+            if (m) it.name = TYPE_LABELS[value] + m[2];
+            showInspector();
+          }
+          fillScope(scopeEl);
+          updateSourceCallout();
+          if (['name', 'type', 'material', 'freq'].includes(path)) renderOutliner();
+          viewport.sync();
+          bus.emit('scene', { source: 'inspector' });
+        } else if (scope === 'env') {
+          if (path.startsWith('room.')) viewport.rebuild();
+          fillScope(scopeEl);
+          updateDerived();
+          bus.emit('scene', { source: 'env' });
+        } else if (scope === 'sim') {
+          fillScope(scopeEl);
+          if (path === 'colorBy') viewport.refreshLines();
+          else bus.emit('scene', { source: 'sim' });
+        } else if (scope === 'display') {
+          viewport.sync();
+          viewport.refreshLines();
+        }
+      }
+
+      function updateDerived() {
+        const s = store.activeSensor();
+        const env = store.state.env;
+        const c = speedOfSound(env.temperature);
+        $('#env-c').textContent = `${fmt(c, 1)} m/s`;
+        $('#env-c-assumed').textContent = `${fmt(C_ASSUMED, 1)} m/s`;
+        if (s) {
+          const f = s.freq * 1000;
+          $('#env-at').textContent = `at ${fmt(s.freq, s.freq % 1 ? 1 : 0)} kHz`;
+          $('#env-lambda').textContent = `${fmt(c / f * 1000, 2)} mm`;
+          $('#env-alpha').textContent = `${fmt(airAbsorptionDbPerM(f, env.temperature, env.humidity, env.pressure), 2)} dB/m`;
+        } else {
+          $('#env-at').textContent = '';
+          $('#env-lambda').textContent = '—';
+          $('#env-alpha').textContent = '—';
+        }
+      }
+
+      function updateSourceCallout() {
+        const el = $('#source-band');
+        const src = store.selected;
+        if (!el || src?.type !== 'source') return;
+        const s = store.activeSensor();
+        el.replaceChildren();
+        const b = document.createElement('b');
+        if (!s) {
+          b.textContent = 'No sensor. ';
+          el.append(b, 'Add a sensor to see whether this source can disturb it.');
+          return;
+        }
+        const lo = s.freq - s.bw / 2, hi = s.freq + s.bw / 2;
+        const inBand = src.emission === 'hiss' || (src.freq >= lo && src.freq <= hi);
+        b.textContent = inBand ? 'In band: ' : 'Out of band: ';
+        const what = src.emission === 'hiss' ? 'Broadband hiss covers' : `${fmt(src.freq, 1)} kHz is ${inBand ? 'inside' : 'outside'}`;
+        el.append(b, `${what} ${s.name}'s ${fmt(lo, 1)}–${fmt(hi, 1)} kHz band. `);
+        const note = document.createElement('span');
+        note.className = 'muted';
+        note.textContent = 'Interference is simulated in the next phase.';
+        el.append(note);
+        el.classList.toggle('callout-ok', !inBand);
+      }
+
+      // ── Right panel tabs ──
       $$('.panel-right > .tabs .tab').forEach((tab) => {
         tab.addEventListener('click', () => {
           $$('.panel-right > .tabs .tab').forEach((t) => t.classList.toggle('is-active', t === tab));
@@ -1475,103 +3133,439 @@
             p.hidden = !on;
             p.classList.toggle('is-active', on);
           });
+          fillAll();
         });
       });
 
-      // Dock tabs (visual only)
-      $$('.dock .tab').forEach((tab) => {
+      // ── Dock tabs ──
+      $$('.dock .tab[data-pane]').forEach((tab) => {
         tab.addEventListener('click', () => {
-          $$('.dock .tab').forEach((t) => t.classList.toggle('is-active', t === tab));
+          $$('.dock .tab[data-pane]').forEach((t) => t.classList.toggle('is-active', t === tab));
+          $$('.dock-pane').forEach((p) => { p.hidden = p.dataset.pane !== tab.dataset.pane; });
         });
       });
 
-      // Outliner selection → inspector + 3D highlight
-      function select(item) {
-        $$('.outliner-item').forEach((i) => i.classList.toggle('is-selected', i === item));
-        const kind = item.dataset.kind;
-        $$('.inspector').forEach((ins) => { ins.hidden = ins.dataset.kind !== kind; });
-        // Jump to the Properties tab when something is picked.
-        $('.panel-right > .tabs .tab[data-tab="props"]').click();
-        viewport?.select(item.dataset.id);
+      // ── Viewport tools + camera ──
+      function setTool(name) {
+        $$('.vp-tools [data-tool]').forEach((b) => b.classList.toggle('is-active', b.dataset.tool === name));
+        viewport.setTool(name);
       }
-      $$('.outliner-item').forEach((item) => {
-        item.addEventListener('click', (e) => {
-          if (e.target.closest('.eye')) return;
-          select(item);
-        });
-      });
-      $$('.outliner .eye').forEach((eye) => {
-        eye.addEventListener('click', () => {
-          const off = eye.textContent === '◉';
-          eye.textContent = off ? '○' : '◉';
-          eye.title = off ? 'Show' : 'Hide';
-        });
-      });
-
-      // Segmented controls
-      $$('.segmented').forEach((seg) => {
-        seg.addEventListener('click', (e) => {
-          const btn = e.target.closest('button');
-          if (!btn) return;
-          $$('button', seg).forEach((b) => b.classList.toggle('is-active', b === btn));
-        });
-      });
-
-      // Viewport tool + camera buttons (one active per group)
-      for (const groupSel of ['.vp-tools', '.vp-views']) {
-        const group = $(groupSel);
-        group.addEventListener('click', (e) => {
-          const btn = e.target.closest('.btn');
-          if (!btn || btn.title === 'Snap to grid') {
-            btn?.classList.toggle('is-active');
-            return;
-          }
-          $$('.btn', group).forEach((b) => { if (b.title !== 'Snap to grid') b.classList.toggle('is-active', b === btn); });
-        });
+      $$('.vp-tools [data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
+      const snapBtn = $('#btn-snap');
+      function toggleSnap() {
+        const on = !viewport.snap;
+        viewport.setSnap(on);
+        snapBtn.classList.toggle('is-active', on);
+        toast(on ? 'Snapping on: 0.1 m, 15°' : 'Snapping off');
       }
-      const toolKeys = { q: 0, w: 1, e: 2, r: 3 };
-      window.addEventListener('keydown', (e) => {
-        if (e.target.matches('input, select, textarea')) return;
-        const i = toolKeys[e.key.toLowerCase()];
-        if (i === undefined) return;
-        $$('.vp-tools .btn')[i]?.click();
-      });
-
-      // Slider read-outs: keep the output's unit text, swap the number.
-      $$('.slider').forEach((wrap) => {
-        const input = $('input[type="range"]', wrap);
-        const out = $('output', wrap);
-        const template = out.textContent;
-        const scale = template.match(/^0\.\d+$/) ? 0.01 : 1; // 0–100 slider shown as 0.00–1.00
-        input.addEventListener('input', () => {
-          const v = Number(input.value) * scale;
-          const text = scale === 1 ? String(Math.round(v)) : v.toFixed(2);
-          out.textContent = template.replace(/[−-]?\d+(\.\d+)?/, text.replace('-', '−'));
+      snapBtn.addEventListener('click', toggleSnap);
+      $$('.vp-views [data-view]').forEach((b) => {
+        b.addEventListener('click', () => {
+          $$('.vp-views [data-view]').forEach((x) => x.classList.toggle('is-active', x === b));
+          viewport.setView(b.dataset.view);
         });
       });
 
-      // Placeholder: remind that actions aren't wired yet.
-      const toast = document.createElement('div');
-      toast.className = 'toast';
-      document.body.appendChild(toast);
-      let toastTimer;
-      const notWired = (what) => {
-        toast.textContent = `${what}: not wired up yet (UI preview)`;
-        toast.classList.add('is-visible');
-        clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 1800);
+      // ── Add / delete / duplicate ──
+      const ADD_DEFAULTS = {
+        sensor: () => ({ pos: { x: -2, y: 1, z: 0 } }),
+        source: () => ({ pos: { x: 0, y: 1, z: 2 } }),
       };
-      $$('.topbar .btn, .add-tile, .inspector-head .btn-danger').forEach((b) => {
-        b.addEventListener('click', () => notWired(b.title || b.textContent.trim()));
+      $$('.add-tile').forEach((b) => {
+        b.addEventListener('click', () => {
+          const type = b.dataset.add;
+          const n = store.items.length;
+          const over = ADD_DEFAULTS[type]?.() || {};
+          // Nudge new items so they don't all land in the same spot.
+          const jitter = ((n * 0.37) % 1.2) - 0.6;
+          const base = makeItem(type).pos;
+          over.pos = { ...base, ...(over.pos || {}) };
+          over.pos.z += jitter;
+          const item = store.add(type, over);
+          renderOutliner();
+          viewport.sync();
+          selectItem(item.id);
+          if (type !== 'sensor' && type !== 'source') setTool('move');
+          bus.emit('scene', { source: 'add' });
+          toast(`${item.name} added. Drag the arrows to move it.`);
+        });
       });
+
+      function deleteSelected() {
+        const it = store.selected;
+        if (!it) return;
+        if (it.type === 'floor') { toast('The floor can be turned off with its eye icon, not deleted'); return; }
+        store.remove(it.id);
+        renderOutliner();
+        viewport.sync();
+        showInspector();
+        bus.emit('scene', { source: 'delete' });
+        toast(`${it.name} deleted`);
+      }
+
+      function duplicateSelected() {
+        const it = store.selected;
+        if (!it || it.type === 'floor') return;
+        const copy = store.duplicate(it.id);
+        renderOutliner();
+        viewport.sync();
+        selectItem(copy.id);
+        bus.emit('scene', { source: 'add' });
+      }
+
+      document.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-action]');
+        if (!b) return;
+        if (b.dataset.action === 'delete') deleteSelected();
+        if (b.dataset.action === 'duplicate') duplicateSelected();
+      });
+
+      // ── Files + presets ──
+      function loadScene(fn) {
+        fn();
+        viewport.rebuild();
+        renderOutliner();
+        showInspector();
+        fillAll();
+        sim.clearHistory();
+        sim.reset();
+        bus.emit('scene', { source: 'load' });
+        viewport.setView('persp');
+      }
+
+      $('#btn-new').addEventListener('click', () => {
+        loadScene(() => store.loadPreset('empty'));
+        toast('New scene');
+      });
+
+      const fileInput = $('#file-input');
+      $('#btn-open').addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files[0];
+        fileInput.value = '';
+        if (!file) return;
+        try {
+          const data = JSON.parse(await file.text());
+          if (!data || !Array.isArray(data.items)) throw new Error('no items');
+          loadScene(() => store.load(data));
+          toast(`Opened ${file.name}`);
+        } catch (err) {
+          toast(`Couldn't open ${file.name}: not a Soundwave Bounce scene`);
+        }
+      });
+
+      $('#btn-save').addEventListener('click', () => {
+        const blob = new Blob([store.serialize()], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'soundwave-scene.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        toast('Scene saved as soundwave-scene.json');
+      });
+
+      const presetsBtn = $('#btn-presets');
+      const menu = $('#presets-menu');
+      for (const [key, p] of Object.entries(PRESETS)) {
+        if (key === 'empty') continue;
+        const b = document.createElement('button');
+        b.setAttribute('role', 'menuitem');
+        b.dataset.preset = key;
+        b.textContent = p.label;
+        menu.appendChild(b);
+      }
+      function setMenu(open) {
+        menu.hidden = !open;
+        presetsBtn.setAttribute('aria-expanded', String(open));
+        if (open) menu.querySelector('button')?.focus();
+      }
+      presetsBtn.addEventListener('click', (e) => { e.stopPropagation(); setMenu(menu.hidden); });
+      menu.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-preset]');
+        if (!b) return;
+        setMenu(false);
+        loadScene(() => store.loadPreset(b.dataset.preset));
+        toast(`Loaded "${PRESETS[b.dataset.preset].label}"`);
+      });
+      document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.menu-wrap')) setMenu(false); });
+
+      // ── Transport ──
+      $('#btn-play').addEventListener('click', () => sim.togglePlay());
+      $('#btn-reset').addEventListener('click', () => sim.reset());
+      $('#btn-back').addEventListener('click', () => sim.step(-1));
+      $('#btn-fwd').addEventListener('click', () => sim.step(1));
+      $('#sel-speed').addEventListener('change', (e) => sim.setSpeed(Number(e.target.value)));
+      $('#chk-loop').addEventListener('change', (e) => sim.setLoop(e.target.checked));
+
+      // ── Help ──
+      const help = $('#help-dialog');
+      $('#btn-help').addEventListener('click', () => help.showModal());
+
+      // ── Keyboard ──
+      window.addEventListener('keydown', (e) => {
+        if (e.target.matches('input, select, textarea') || help.open) return;
+        const k = e.key.toLowerCase();
+        if ((e.ctrlKey || e.metaKey) && k === 'd') { e.preventDefault(); duplicateSelected(); return; }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (k === 'escape') { if (!menu.hidden) setMenu(false); else selectItem(null); return; }
+        const tools = { q: 'select', w: 'move', e: 'rotate', r: 'scale' };
+        if (tools[k]) { setTool(tools[k]); return; }
+        if (k === 's') { toggleSnap(); return; }
+        if (k === ' ') { e.preventDefault(); sim.togglePlay(); return; }
+        if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSelected(); }
+      });
+
+      // Gizmo drags change position/rotation/size: keep the inspector in step.
+      bus.on('scene', (e) => {
+        if (e?.source === 'gizmo') fillScope($('[data-scope="item"]'));
+      });
+      bus.on('selection', updateDerived);
+
+      return { renderOutliner, showInspector, fillAll, toast };
+    }
+
+    // ── 40-sim.js ──
+    // ─────────────────────────────────────────────────────────────
+    // Simulation controller: re-traces when the scene changes, runs the
+    // playback clock, and fills the readouts, ray log and status bar.
+    // ─────────────────────────────────────────────────────────────
+
+    function createSim({ viewport, echoChart, historyChart }) {
+      const $ = (sel) => document.querySelector(sel);
+      let result = null;
+      let t = 0;
+      let playing = false;
+      let loop = false;
+      let speed = 0.005; // simulated ms per real ms
+      let lastTraceAt = 0;
+      let pending = null;
+
+      const timeline = $('#timeline');
+      const playBtn = $('#btn-play');
+
+      // ── Tracing ──
+      function retrace() {
+        pending = null;
+        const s = store.activeSensor();
+        result = s ? traceSensor(store.state, s) : null;
+        lastTraceAt = performance.now();
+        viewport.setResult(result);
+        echoChart.setResult(result);
+        const tMax = result ? result.tMax : 40;
+        timeline.max = String(tMax);
+        $('#tl-max').textContent = `${tMax} ms`;
+        if (t > tMax) t = tMax;
+        setTime(t);
+        updateReadouts();
+        updateLog();
+        updateStatus();
+      }
+
+      // Re-trace soon after a change, but not more often than the trace allows,
+      // so dragging stays smooth even with many rays.
+      function schedule() {
+        if (pending) return;
+        const cost = result ? result.traceMs : 30;
+        const wait = Math.max(0, Math.max(50, cost * 2) - (performance.now() - lastTraceAt));
+        pending = setTimeout(retrace, wait);
+      }
+      bus.on('scene', schedule);
+      let lastActive = null;
+      bus.on('selection', () => {
+        const id = store.activeSensor()?.id ?? null;
+        if (id !== lastActive) { lastActive = id; schedule(); }
+      });
+
+      // ── Clock ──
+      function setTime(v) {
+        t = v;
+        viewport.setTime(t);
+        echoChart.setTime(t);
+        timeline.value = String(t);
+        const c = result ? result.c : speedOfSound(store.state.env.temperature);
+        $('#vp-t').textContent = fmt(t, 2);
+        $('#vp-dist').textContent = `pulse travelled ${fmt(c * t / 1000, 2)} m`;
+      }
+
+      function setPlaying(on) {
+        playing = on;
+        playBtn.classList.toggle('is-playing', on);
+        playBtn.querySelector('span').textContent = on ? 'Pause' : 'Ping';
+        playBtn.title = on ? 'Pause (Space)' : 'Fire a ping (Space)';
+      }
+
+      function pingFinished() {
+        if (!result) return;
+        historyChart.push({ measured: result.detection ? result.detection.distance : null, truth: result.trueDistance });
+      }
+
+      let lastFrame = performance.now();
+      function frame(now) {
+        const dt = Math.min(100, now - lastFrame);
+        lastFrame = now;
+        if (playing && result) {
+          let next = t + dt * speed;
+          if (next >= result.tMax) {
+            pingFinished();
+            if (loop) next = 0;
+            else { next = result.tMax; setPlaying(false); }
+          }
+          setTime(next);
+        }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+
+      timeline.addEventListener('input', () => {
+        setPlaying(false);
+        setTime(Number(timeline.value));
+      });
+
+      // ── Readouts ──
+      function setReadout(id, text, cls) {
+        const el = $(id);
+        el.textContent = '';
+        if (text == null) { el.textContent = '—'; el.className = 'readout-value mono'; return; }
+        el.append(text);
+        const unit = document.createElement('small');
+        unit.textContent = ' m';
+        el.append(unit);
+        el.className = `readout-value mono${cls ? ' ' + cls : ''}`;
+      }
+
+      function updateReadouts() {
+        const status = $('#ro-status');
+        const msg = $('#ro-status-msg');
+        const s = store.activeSensor();
+        if (!result || !s) {
+          setReadout('#ro-true', null);
+          setReadout('#ro-measured', null);
+          setReadout('#ro-error', null);
+          status.textContent = 'No sensor';
+          status.className = 'status-pill status-warn';
+          msg.textContent = 'Add a sensor from the left panel.';
+          return;
+        }
+        const truth = result.trueDistance;
+        const det = result.detection;
+        setReadout('#ro-true', truth == null ? null : fmt(truth, 2));
+        $('#ro-true').title = truth == null ? 'Nothing straight ahead' : `Straight ahead: ${result.trueTarget}`;
+
+        if (!det) {
+          setReadout('#ro-measured', null);
+          setReadout('#ro-error', null);
+          status.textContent = 'No echo';
+          status.className = 'status-pill status-bad';
+          msg.textContent = `Nothing crossed ${s.threshold} dB SPL within ${fmt(s.maxRange, 1)} m.`;
+          return;
+        }
+
+        const measured = det.distance;
+        const source = det.label ? det.label : 'an unknown path';
+        if (truth == null) {
+          setReadout('#ro-measured', fmt(measured, 2), 'is-warn');
+          setReadout('#ro-error', null);
+          status.textContent = 'Echo, nothing ahead';
+          status.className = 'status-pill status-warn';
+          msg.textContent = `Echo from ${source}.`;
+          return;
+        }
+        const err = measured - truth;
+        const ok = Math.abs(err) <= Math.max(0.03, 0.02 * truth);
+        setReadout('#ro-measured', fmt(measured, 2), ok ? 'is-good' : 'is-warn');
+        setReadout('#ro-error', (err > 0 ? '+' : '') + fmt(err, 2), ok ? '' : 'is-bad');
+        status.textContent = ok ? 'OK' : 'Off target';
+        status.className = `status-pill ${ok ? 'status-good' : 'status-warn'}`;
+        if (ok) msg.textContent = `Echo from ${source}.`;
+        else if (det.label === result.trueTarget) msg.textContent = `Echo from ${source}, but from a point off the beam axis that faces the sensor.`;
+        else msg.textContent = `First echo came from ${source}.`;
+      }
+
+      // ── Ray log ──
+      function updateLog() {
+        const body = $('#ray-log-body');
+        body.replaceChildren();
+        if (!result) return;
+        const det = result.detection;
+        const rows = result.groups.slice(0, 30); // strongest first
+        if (!rows.length) {
+          const tr = body.insertRow();
+          const td = tr.insertCell();
+          td.colSpan = 4;
+          td.className = 'muted';
+          td.textContent = 'No echoes reached the sensor.';
+          return;
+        }
+        for (const g of rows) {
+          const tr = body.insertRow();
+          if (det && g.label === det.label && Math.abs(g.tPeak - det.tMs) < 0.5) tr.className = 'is-detected';
+          else if (g.levelDb < result.threshold) tr.className = 'is-below';
+          const cells = [
+            [`${fmt(g.tPeak, 2)} ms`, 'mono'],
+            [`${fmt(C_ASSUMED * g.tPeak / 2000, 2)} m`, 'mono'],
+            [`${fmt(g.levelDb, 1)} dB`, 'mono'],
+            [g.label, 'path'],
+          ];
+          for (const [text, cls] of cells) {
+            const td = tr.insertCell();
+            td.textContent = text;
+            td.className = cls;
+          }
+        }
+      }
+
+      function updateStatus() {
+        const s = store.activeSensor();
+        const c = speedOfSound(store.state.env.temperature);
+        $('#sb-sensor').textContent = s ? `${s.name} · ${fmt(s.freq, s.freq % 1 ? 1 : 0)} kHz` : 'No sensor';
+        $('#sb-rays').textContent = `${store.state.sim.rays.toLocaleString()} rays · ≤ ${store.state.sim.maxBounces} bounces`;
+        $('#sb-c').textContent = `c = ${fmt(c, 1)} m/s`;
+        $('#sb-lambda').textContent = s ? `λ = ${fmt(c / (s.freq * 1000) * 1000, 2)} mm` : '';
+        $('#sb-trace').textContent = result ? `trace ${Math.round(result.traceMs)} ms` : '';
+        $('#trace-info').textContent = result
+          ? `${result.rays.toLocaleString()} rays in ${Math.round(result.traceMs)} ms, ${result.groups.length} echo paths`
+          : '—';
+      }
+
+      return {
+        retrace,
+        togglePlay() {
+          if (!result) return;
+          if (!playing && t >= result.tMax) setTime(0);
+          setPlaying(!playing);
+        },
+        reset() { setPlaying(false); setTime(0); },
+        step(dir) {
+          setPlaying(false);
+          const tMax = result ? result.tMax : 40;
+          setTime(clamp(t + dir * tMax / 100, 0, tMax));
+        },
+        scrub(v) { setPlaying(false); setTime(v); },
+        setSpeed(v) { speed = v; },
+        setLoop(v) { loop = v; },
+        clearHistory() { historyChart.clear(); },
+      };
     }
 
     // ── 90-main.js ──
     // Entry point.
+    store.loadPreset('demo');
+
     const viewport = createViewport(document.getElementById('viewport'));
-    createEchoChart(document.getElementById('echo-chart'));
-    initUI({ viewport });
-    viewport.select('sensor1');
+    let sim = null;
+    const echoChart = createEchoChart(document.getElementById('echo-chart'), { onScrub: (t) => sim?.scrub(t) });
+    const historyChart = createHistoryChart(document.getElementById('history-chart'));
+    sim = createSim({ viewport, echoChart, historyChart });
+    const ui = initUI({ viewport, sim });
+
+    viewport.rebuild();
+    viewport.setView('persp');
+    ui.renderOutliner();
+    ui.showInspector();
+    ui.fillAll();
+    sim.retrace();
   </script>
 </body>
 </html>

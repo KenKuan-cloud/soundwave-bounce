@@ -113,3 +113,8 @@ html, body {
   .statusbar { flex-wrap: wrap; height: auto; padding: 6px 16px; gap: 8px 14px; }
   .statusbar .grow, .statusbar .muted { display: none; }
 }
+
+.readouts { grid-column: 2; grid-row: 1; }
+@media (max-width: 960px) {
+  .readouts { grid-column: 1; grid-row: 2; }
+}
